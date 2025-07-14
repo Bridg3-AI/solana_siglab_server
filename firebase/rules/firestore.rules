@@ -1,0 +1,102 @@
+rules_version = '2';
+
+// Firestore security rules following Firebase 2025 best practices
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions for common checks
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.admin == true;
+    }
+    
+    function isValidUser(data) {
+      return data.keys().hasAll(['username', 'created_at']) &&
+             data.username is string &&
+             data.username.size() >= 3 &&
+             data.username.size() <= 30;
+    }
+    
+    function isValidConversation(data) {
+      return data.keys().hasAll(['messages', 'metadata']) &&
+             data.messages is list &&
+             data.metadata is map;
+    }
+    
+    // Users collection - enhanced security
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(resource.data);
+      allow update: if isOwner(userId) && isValidUser(resource.data);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+    
+    // Conversations - with session-based access control
+    match /conversations/{sessionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidConversation(resource.data);
+      allow update: if isAuthenticated() && isValidConversation(resource.data);
+      allow delete: if isAdmin();
+    }
+    
+    // Agent logs and analytics - admin and system access
+    match /agent_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // System metrics and monitoring
+    match /metrics/{metricId} {
+      allow read: if isAdmin();
+      allow write: if true; // Allow system writes for monitoring
+    }
+    
+    // API usage tracking
+    match /api_usage/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if true; // Allow system writes for usage tracking
+    }
+    
+    // Public configuration and announcements
+    match /public/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // System collections (agent configurations, feature flags, etc.)
+    match /system/{document=**} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // Rate limiting data
+    match /rate_limits/{identifier} {
+      allow read, write: if true; // Allow system operations for rate limiting
+    }
+    
+    // Session management
+    match /sessions/{sessionId} {
+      allow read, write: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+    
+    // Error tracking and debugging
+    match /errors/{errorId} {
+      allow read: if isAdmin();
+      allow write: if true; // Allow system writes for error tracking
+    }
+    
+    // Default rule - explicit deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

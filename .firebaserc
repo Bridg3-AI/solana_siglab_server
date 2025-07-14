@@ -1,0 +1,16 @@
+{
+  "projects": {
+    "default": "solana-siglab",
+    "development": "solana-siglab-dev",
+    "staging": "solana-siglab-staging",
+    "production": "solana-siglab"
+  },
+  "targets": {
+    "solana-siglab": {
+      "hosting": {
+        "docs": ["solana-siglab-docs"]
+      }
+    }
+  },
+  "etags": {}
+}

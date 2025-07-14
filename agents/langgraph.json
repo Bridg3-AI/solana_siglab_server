@@ -1,0 +1,7 @@
+{
+  "dependencies": ["./agents"],
+  "graphs": {
+    "solana_agent": "./agents/agent.py:graph"
+  },
+  "env": "./agents/.env"
+}
