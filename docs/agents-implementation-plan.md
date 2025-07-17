@@ -30,6 +30,57 @@ Solana SigLab Server의 `agents` 모듈은 LangGraph 프레임워크를 활용�
 | Ⅴ Validation Guard | 검증 체인 + 정책엔진 | 결과 정합성(주소 형식·네트워크 검증) 체크 & 에이전트 재시도 |
 | Ⅵ Audit Trail | Prompt/Action/Result 로그 | 모델 거버넌스·블록체인 분석 보고서 자동 생성 |
 
+### LangGraph 설계 원칙
+
+LangGraph는 "계획 → 행동 → 관찰" 루프를 *그래프* 형태로 선언·실행할 수 있는 프레임워크입니다. 각 **노드(Node)** 는 LLM·Tool·함수 호출 등을 담당하고, **에지(Edge)** 는 조건부 분기·루프·종료를 정의합니다. Solana SigLab 보험 에이전트는 다음과 같은 그래프 구조를 채택합니다.
+
+| 노드 ID | 역할 | 구현 파일 |
+|---------|------|-----------|
+| `planner` | 사용자의 자연어 요청을 파싱하여 고수준 **Plan**(손해율 산정 → 보험료 계산 → 상품 생성 …) 생성 | `agents/core/planner.py` |
+| `tool_router` | Plan 단계별로 호출할 Tool 을 결정하고 파라미터 빌드 | `agents/core/router.py` |
+| `executor` | 실제 Python/FastAPI 마이크로서비스로 Tool 실행, 결과 수집 | `agents/core/executor.py` |
+| `validator` | 출력값 스키마·정책 검증, 실패 시 `planner` 로 리루트 | `agents/validation/guards.py` |
+| `END` | 모든 단계가 완료되면 그래프 종료 | (LangGraph 내장) |
+
+#### Graph 정의 예시 (Python)
+```python
+from typing import TypedDict, Any
+from langgraph.graph import StateGraph, END
+
+class AgentState(TypedDict):
+    messages: list[dict]
+    plan: str
+    result: Any
+
+# 1) 그래프 객체 생성
+graph = StateGraph(AgentState)
+
+# 2) 노드 등록
+graph.add_node("planner", planner_chain)
+graph.add_node("tool_router", tool_router)
+graph.add_node("executor", executor_layer)
+graph.add_node("validator", validator_guard)
+
+# 3) 에지(흐름) 정의
+graph.add_edge("planner", "tool_router")
+graph.add_edge("tool_router", "executor")
+graph.add_edge("executor", "validator")
+# 유효성 검증 통과 시 종료, 실패 시 재계획
+graph.add_conditional_edges(
+    "validator",
+    {
+        "valid": END,
+        "invalid": "planner",
+    },
+)
+
+# 4) 컴파일 & 실행
+agent = graph.compile()
+result = agent.invoke({"messages": user_messages})
+```
+
+> 📌 **LangGraph Best Practice**: `StateGraph` 의 **타입 정의**(위 예시의 `AgentState`)를 명시하여 각 노드 I/O 타입 안정성을 확보하고, `add_conditional_edges` 로 재시도·가드 로직을 선언적으로 표현합니다.
+
 ### 프레임워크 선택 근거
 LangGraph는 2025년형 오픈소스 프레임워크로 계획→행동→관찰 루프와 도구 타입 세이프티가 성숙해 파라메트릭 보험 워크플로우 자동화에 최적화됨
 
@@ -47,25 +98,47 @@ LangGraph는 2025년형 오픈소스 프레임워크로 계획→행동→관찰
 | `blockchain.trigger_payout` | `/contracts/payout` | (contract_addr, amount) → 거래 해시 | 보험금 자동 지급 |
 | `report.gen_insurance` | `/report/insurance` | (product_data) → PDF | 보험 상품 보고서 생성 |
 
-각 Tool 함수 시그니처는 LMM 시스템 프롬프트에 function schema로 주입해 자연어 보험 요청 → 함수 호출로 작동
+각 Tool 함수 시그니처는 **LangGraph Function Schema**(JSON Schema 기반)로 정의되어 `StateGraph.compile()` 시 자동 검증됩니다. 시스템 프롬프트에는 해당 스키마가 삽입되어 자연어 보험 요청 → 안전한 함수 호출로 이어집니다.
 
-## 3. 에이전트 Reasoning Loop (pseudo-prompt)
-
+### LangGraph 상태 & 스키마 매핑
+```python
+class AgentState(TypedDict):
+    messages: list[dict]         # 대화 기록
+    plan: str                    # planner 가 생성한 단계형 계획
+    tool_call: dict | None       # 현재 실행할 tool payload
+    result: dict | None          # tool 실행 결과
 ```
-System:
-You are Solana SigLab Insurance Agent. Available tools: insurance.collect_event_data, insurance.calculate_loss_ratio, insurance.create_product, ...
+> 모든 Tool 은 `input_schema`, `output_schema` 메타데이터를 가지며, `validator` 노드에서 `pydantic` 검증을 통과해야 다음 에지로 이동합니다.
 
-User:
+## 3. LangGraph Reasoning Flow
+
+```mermaid
+graph TD
+    A[planner] --> B[tool_router]
+    B --> C[executor]
+    C --> D{validator}
+    D -->|valid| E[END]
+    D -->|invalid| A
+```
+
+### Pseudo-prompt 예시
+```system
+You are Solana SigLab Insurance Agent running on LangGraph.
+State keys: messages, plan, result.
+Available tools: insurance.collect_event_data, insurance.calculate_loss_ratio, insurance.calculate_premium, ...
+```
+```user
 "태풍으로 인한 농작물 피해 보험 상품을 개발해주세요."
-
---- Planner 체인 출력 예 ---
+```
+```planner_output
+Plan:
 1. Collect typhoon event data (insurance.collect_event_data)
-2. Calculate historical loss ratio for typhoon events
-3. Assess risk factors for agricultural damage
-4. Calculate appropriate premium (insurance.calculate_premium)
+2. Calculate historical loss ratio for typhoon events (insurance.calculate_loss_ratio)
+3. Assess agricultural damage risk
+4. Calculate premium (insurance.calculate_premium)
 5. Create insurance product (insurance.create_product)
-6. Deploy smart contract (blockchain.deploy_contract)
-7. Generate product report (report.gen_insurance)
+6. Deploy contract (blockchain.deploy_contract)
+7. Generate report (report.gen_insurance)
 ```
 
 ## 4. 모델·데이터 파이프라인 세부
@@ -104,7 +177,7 @@ User:
 | Sprint | 목표 | 산출물 |
 |--------|------|--------|
 | S1 | 보험 Tool API 3종 PoC | collect_event_data, calculate_loss_ratio, assess_risk |
-| S2 | Planner-Router 체인 통합 | 보험 전용 LMM Prompt template, function schema |
+| S2 | LangGraph 그래프 구축 & 컴파일 | planner/router 노드 연결, Function Schema 정의, `StateGraph.compile()` 통과 |
 | S3 | 보험 Guard rails & Audit Trail | 보험 정책엔진, 전량 보험 거래 로그 |
 | S4 | 스마트 컨트랙트 연동 | deploy_contract, trigger_payout, validate_conditions |
 
