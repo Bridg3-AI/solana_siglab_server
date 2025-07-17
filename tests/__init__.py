@@ -1,0 +1,1 @@
+"""Tests for Solana SigLab Insurance Agent"""

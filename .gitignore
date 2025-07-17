@@ -1,4 +1,49 @@
+# Environment variables
 .env
+.env.local
+.env.production
+.env.development
+
+# Dependencies
 node_modules
 venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+.coverage
+.pytest_cache/
+
+# Local development
 CLAUDE.md.local
+IMPLEMENTATION_CHECKLIST.md
+test_basic.py
+
+# Firebase
+firebase-debug.log
+.firebase/
+
+# Jupyter
+.ipynb_checkpoints/
