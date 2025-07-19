@@ -15,6 +15,7 @@ from .models.base import (
     PerilCanvas, FrequencyPrior, SeverityPrior, DistributionType
 )
 from ..core.config import get_config
+from .utils.prompt_templates import PriorExtractionPrompts
 
 
 class PriorExtractor:
@@ -81,79 +82,29 @@ class PriorExtractor:
             FrequencyPrior 객체
         """
         
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an actuarial risk modeling expert with deep knowledge of catastrophe modeling and historical event patterns.
-
-CRITICAL: Respond with pure JSON format only. No code blocks or additional explanations. Output JSON only.
-
-Response format:
-{{
-    "distribution": "negative_binomial",
-    "parameters": {{
-        "r": 2.5,
-        "p": 0.75
-    }},
-    "percentiles": {{
-        "5th": 0.0,
-        "50th": 1.0,
-        "95th": 4.0
-    }},
-    "sources": ["Source1", "Source2"],
-    "confidence": 0.85,
-    "rationale": "Brief explanation of parameter selection"
-}}
-
-Key requirements:
-1. Use Negative-Binomial(r, p) for overdispersed count data
-2. Provide 5th, 50th, 95th percentiles for uncertainty quantification
-3. Name at least 2 authoritative meteorological/industry sources
-4. Confidence level based on data quality and historical precedent"""),
-            ("human", """Event type: {peril}
-Region: {region}
-Context: Annual frequency modeling for parametric insurance
-Data sources mentioned: {data_sources}
-
-Provide the Negative-Binomial parameters for annual event count, considering:
-- Historical frequency patterns in the specified region
-- Climate change trends and evolving risk patterns
-- Seasonal clustering and return periods
-- Regional vulnerability and exposure characteristics""")
-        ])
+        # 새로운 안전한 템플릿 시스템 사용
+        prompt = PriorExtractionPrompts.get_frequency_prompt()
         
         try:
             print(f"🔍 [API] 빈도 Prior LLM 호출 중... (위험: {peril}, 지역: {region})")
+            print(f"🔧 [TEMPLATE] 안전한 ChatPromptTemplate 사용")
+            
             messages = prompt.format_messages(
                 peril=peril, 
                 region=region, 
                 data_sources=", ".join(data_sources) if data_sources else "Standard meteorological databases"
             )
+            
             response = await self.llm.ainvoke(messages)
             print(f"✅ [API] 빈도 Prior LLM 응답 성공")
             print(f"🔍 [API] 응답 내용: {response.content[:300]}...")
             
-            # JSON 파싱 및 검증 - 강화된 파싱 로직
-            content = response.content.strip()
-            
-            # 코드 블록 제거
-            if content.startswith("```json"):
-                content = content[7:]
-            elif content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            
-            content = content.strip()
-            
-            # JSON 추출
-            start_idx = content.find('{')
-            end_idx = content.rfind('}')
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                content = content[start_idx:end_idx+1]
-            
-            print(f"🔍 [API] 빈도 Prior JSON 추출: {content}")
-            prior_data = json.loads(content)
-            print(f"✅ [API] 빈도 Prior JSON 파싱 성공: {prior_data}")
-            return FrequencyPrior(**prior_data)
+            # 강화된 JSON 파싱 로직 사용
+            prior_data = self._parse_llm_json_response(response.content, "빈도 Prior")
+            if prior_data:
+                return FrequencyPrior(**prior_data)
+            else:
+                raise ValueError("JSON 파싱 실패")
             
         except (json.JSONDecodeError, Exception) as e:
             print(f"❌ [API] 빈도 Prior LLM 호출 실패: {str(e)}")
@@ -178,102 +129,61 @@ Provide the Negative-Binomial parameters for annual event count, considering:
         # 위험 타입별 적절한 분포 선택
         recommended_distribution = self._get_recommended_severity_distribution(peril, metric)
         
-        # JSON에서 중괄호가 문제가 되지 않도록 문자열 연결 방식 사용
-        system_prompt = (
-            "You are an expert in catastrophe modeling and extreme value statistics.\n\n"
-            "CRITICAL: Respond with pure JSON format only. No code blocks or additional explanations. Output JSON only.\n\n"
-            "Response format:\n"
-            "{\n"
-            '    "distribution": "' + recommended_distribution + '",\n'
-            '    "parameters": {\n'
-            '        "mu": 2.1,\n'
-            '        "sigma": 0.6\n'
-            '    },\n'
-            '    "percentiles": {\n'
-            '        "5th": 3.2,\n'
-            '        "50th": 8.1,\n'
-            '        "95th": 25.4\n'
-            '    },\n'
-            '    "metric_unit": "' + unit + '",\n'
-            '    "sources": ["Source1", "Source2"],\n'
-            '    "confidence": 0.82,\n'
-            '    "rationale": "Brief explanation of distribution choice and parameters"\n'
-            "}\n\n"
-            "Distribution guidance:\n"
-            "- LogNormal: For multiplicative processes, positive skewness\n"
-            "- Gamma: For positive continuous values with flexible shape\n"
-            "- Exponential: For memory-less waiting times\n"
-            "- Normal: For symmetric, bell-shaped distributions"
-        )
-        
-        # human 메시지도 문자열 연결 방식으로 LangChain 템플릿 충돌 방지
-        # 티켓 관련 지표에 대한 특별한 안내 제공
+        # 새로운 안전한 템플릿 시스템 사용
+        # 티켓 관련 지표인지 확인하여 적절한 프롬프트 선택
         if "tickets" in metric or "ticket" in metric:
-            if "percentage" in metric or "percent" in unit:
-                human_prompt = (
-                    "Event type: " + peril + "\n"
-                    "Trigger metric: " + metric + "\n"
-                    "Unit: " + unit + "\n"
-                    "Recommended distribution: " + recommended_distribution + "\n\n"
-                    "CRITICAL: For percentage-based metrics, values should be realistic percentages (0-100).\n"
-                    "Typical ranges: Low sales (20-40%), Medium sales (50-70%), High sales (80-95%).\n"
-                    "Concert cancellations often occur when sales are high (70%+), so ensure distribution reflects this.\n\n"
-                    "Provide the " + recommended_distribution + " distribution parameters for " + metric + " severity in " + peril + " scenarios.\n\n"
-                    "Requirements:\n"
-                    "- Values must be in percentage range (0-100)\n"
-                    "- 50th percentile should be around 60-80% for realistic cancellation scenarios\n"
-                    "- 95th percentile should approach 90-95% to capture high-ticket-sales cancellations\n"
-                    "- Parameters should generate values that can trigger the insurance payout\n"
-                    "- Consider seasonal patterns and market dynamics"
-                )
-            else:  # number_of_tickets_sold case
-                human_prompt = (
-                    "Event type: " + peril + "\n"
-                    "Trigger metric: " + metric + "\n"
-                    "Unit: " + unit + "\n"
-                    "Recommended distribution: " + recommended_distribution + "\n\n"
-                    "CRITICAL: For ticket count metrics, values should reflect realistic concert venue capacities.\n"
-                    "Typical venue sizes: Small venues (500-2000), Medium venues (2000-10000), Large venues (10000-50000).\n"
-                    "Concert cancellations are insured when significant ticket sales occur (1000+ tickets).\n\n"
-                    "Provide the " + recommended_distribution + " distribution parameters for " + metric + " severity in " + peril + " scenarios.\n\n"
-                    "Requirements:\n"
-                    "- Values should represent realistic ticket sales numbers\n"
-                    "- 50th percentile should be around 2000-5000 tickets for medium venues\n"
-                    "- 95th percentile should reach 10000-20000 for large venue scenarios\n"
-                    "- Parameters should generate values that can trigger insurance payouts (>1000 tickets)\n"
-                    "- Consider venue capacity constraints and market demand patterns"
-                )
-        else:
-            human_prompt = (
-                "Event type: " + peril + "\n"
-                "Trigger metric: " + metric + "\n"
-                "Unit: " + unit + "\n"
-                "Recommended distribution: " + recommended_distribution + "\n\n"
-                "Provide the " + recommended_distribution + " distribution parameters for the severity of " + metric + " when " + peril + " events occur.\n\n"
-                "Consider:\n"
-                "- Physical constraints and realistic ranges for " + metric + "\n"
-                "- Historical extreme values and return periods\n"
-                "- Fat-tail characteristics for catastrophic events\n"
-                "- Measurement precision and data quality factors"
+            prompt = PriorExtractionPrompts.get_severity_tickets_prompt(
+                recommended_distribution, unit, metric
             )
+            print(f"🔧 [TEMPLATE] 티켓 특화 ChatPromptTemplate 사용")
+        else:
+            prompt = PriorExtractionPrompts.get_severity_prompt(
+                recommended_distribution, unit
+            )
+            print(f"🔧 [TEMPLATE] 표준 ChatPromptTemplate 사용")
         
         try:
             print(f"🔍 [API] 심도 Prior LLM 호출 중... (위험: {peril}, 지표: {metric})")
             
-            # ChatPromptTemplate을 사용하지 않고 직접 메시지 생성
-            from langchain_core.messages import SystemMessage, HumanMessage
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=human_prompt)
-            ]
+            messages = prompt.format_messages(
+                peril=peril,
+                metric=metric,
+                unit=unit,
+                distribution=recommended_distribution
+            )
             
-            print(f"🔍 [API] 메시지 직접 생성 완료")
             response = await self.llm.ainvoke(messages)
             print(f"✅ [API] 심도 Prior LLM 응답 성공")
             print(f"🔍 [API] 응답 내용: {response.content[:300]}...")
             
-            # JSON 파싱 및 검증 - 강화된 파싱 로직
-            content = response.content.strip()
+            # 강화된 JSON 파싱 로직 사용
+            prior_data = self._parse_llm_json_response(response.content, "심도 Prior")
+            if prior_data:
+                # LLM 제공 파라미터와 percentile이 불일치할 경우 수정
+                corrected_prior_data = self._correct_distribution_parameters(prior_data)
+                return SeverityPrior(**corrected_prior_data)
+            else:
+                raise ValueError("JSON 파싱 실패")
+            
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"❌ [API] 심도 Prior LLM 호출 실패: {str(e)}")
+            # Fallback: 기본 Prior 반환
+            return self._get_default_severity_prior(peril, metric, unit)
+    
+    def _parse_llm_json_response(self, content: str, context: str) -> Optional[Dict]:
+        """
+        LLM 응답에서 JSON을 안전하게 파싱
+        
+        Args:
+            content: LLM 응답 내용
+            context: 로깅을 위한 컨텍스트 (예: "빈도 Prior", "심도 Prior")
+            
+        Returns:
+            파싱된 JSON 딕셔너리 또는 None
+        """
+        try:
+            # 기본 정리
+            content = content.strip()
             
             # 코드 블록 제거
             if content.startswith("```json"):
@@ -285,25 +195,32 @@ Provide the Negative-Binomial parameters for annual event count, considering:
             
             content = content.strip()
             
-            # JSON 추출
+            # 이중 중괄호 처리 - LangChain 템플릿에서 이스케이프된 것을 원래대로
+            content = content.replace('{{', '{').replace('}}', '}')
+            
+            # JSON 추출 - 첫 번째 { 부터 마지막 } 까지
             start_idx = content.find('{')
             end_idx = content.rfind('}')
+            
             if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                content = content[start_idx:end_idx+1]
-            
-            print(f"🔍 [API] 심도 Prior JSON 추출: {content}")
-            prior_data = json.loads(content)
-            print(f"✅ [API] 심도 Prior JSON 파싱 성공: {prior_data}")
-            
-            # LLM 제공 파라미터와 percentile이 불일치할 경우 수정
-            corrected_prior_data = self._correct_distribution_parameters(prior_data)
-            
-            return SeverityPrior(**corrected_prior_data)
-            
-        except (json.JSONDecodeError, Exception) as e:
-            print(f"❌ [API] 심도 Prior LLM 호출 실패: {str(e)}")
-            # Fallback: 기본 Prior 반환
-            return self._get_default_severity_prior(peril, metric, unit)
+                json_content = content[start_idx:end_idx+1]
+                print(f"🔍 [API] {context} JSON 추출: {json_content}")
+                
+                # JSON 파싱 시도
+                result = json.loads(json_content)
+                print(f"✅ [API] {context} JSON 파싱 성공: {result}")
+                return result
+            else:
+                print(f"❌ [API] {context} JSON 구조를 찾을 수 없음")
+                return None
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ [API] {context} JSON 파싱 실패: {str(e)}")
+            print(f"🔍 [API] 파싱 실패 내용: {content[:500]}...")
+            return None
+        except Exception as e:
+            print(f"❌ [API] {context} 예상치 못한 오류: {str(e)}")
+            return None
     
     def _get_recommended_severity_distribution(self, peril: str, metric: str) -> str:
         """위험 타입과 지표에 따른 권장 분포"""

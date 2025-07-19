@@ -15,6 +15,7 @@ from .models.base import (
     CurveType, DistributionType
 )
 from ..core.config import get_config
+from .utils.prompt_templates import PerilCanvasPrompts
 
 
 class PerilCanvasGenerator:
@@ -90,110 +91,41 @@ class PerilCanvasGenerator:
     async def _extract_peril_info(self, user_input: str) -> Dict[str, str]:
         """사용자 입력에서 위험 타입 및 기본 정보 추출"""
         
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an insurance risk analyzer. Extract information from user input and respond with valid JSON only.
-
-CRITICAL: Your response must be a single, complete, valid JSON object. Do not include any text before or after the JSON.
-
-Required format:
-{{
-    "peril": "risk_type_in_lowercase_english",
-    "description": "Brief Korean description",
-    "region": "Global",
-    "coverage_period": "annual", 
-    "industry": "general"
-}}
-
-Examples:
-Input: "태풍 보험" → Output: {{"peril": "typhoon", "description": "태풍 피해 보험", "region": "Korea", "coverage_period": "annual", "industry": "general"}}
-Input: "콘서트 취소" → Output: {{"peril": "concert_cancellation", "description": "콘서트 취소 보험", "region": "Global", "coverage_period": "annual", "industry": "general"}}"""),
-            ("human", "Input: {user_input}")
-        ])
+        # 새로운 안전한 템플릿 시스템 사용
+        prompt = PerilCanvasPrompts.get_peril_extraction_prompt()
         
-        response = None
         try:
-            messages = prompt.format_messages(user_input=user_input)
             print(f"🔍 [API] Peril extraction LLM 호출 중... (입력: {user_input})")
-            print(f"🔍 [API] 프롬프트 메시지: {messages}")
+            print(f"🔧 [TEMPLATE] 안전한 ChatPromptTemplate 사용")
             
+            messages = prompt.format_messages(user_input=user_input)
             response = await self.llm.ainvoke(messages)
             print(f"✅ [API] LLM 응답 성공")
-            print(f"🔍 [API] 응답 타입: {type(response)}")
-            print(f"🔍 [API] 응답 속성: {dir(response)}")
-            print(f"🔍 [API] 전체 응답 (raw): {repr(response.content)}")
-            print(f"🔍 [API] 응답 길이: {len(response.content)} 문자")
             
-            # JSON 정리 및 파싱 - 더 강화된 파싱 로직
-            content = response.content.strip()
-            print(f"🔍 [API] strip 후 내용: {repr(content)}")
-            
-            # 다양한 코드 블록 형식 제거
-            if content.startswith("```json"):
-                content = content[7:]
-                print(f"🔍 [API] ```json 제거 후: {repr(content)}")
-            elif content.startswith("```"):
-                content = content[3:]
-                print(f"🔍 [API] ``` 제거 후: {repr(content)}")
-            if content.endswith("```"):
-                content = content[:-3]
-                print(f"🔍 [API] 끝의 ``` 제거 후: {repr(content)}")
-            
-            # 추가 공백 및 불필요한 문자 제거
-            content = content.strip()
-            print(f"🔍 [API] 최종 strip 후: {repr(content)}")
-            
-            # JSON 추출 시도 - 첫 번째 { 부터 마지막 } 까지
-            start_idx = content.find('{')
-            end_idx = content.rfind('}')
-            print(f"🔍 [API] JSON 시작: {start_idx}, 끝: {end_idx}")
-            
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                json_content = content[start_idx:end_idx+1]
-                print(f"🔍 [API] 추출된 JSON: {repr(json_content)}")
+            # 강화된 JSON 파싱 로직 사용
+            result = self._parse_llm_json_response(response.content, "Peril extraction")
+            if result:
+                # 필수 필드 검증
+                required_fields = ["peril", "description", "region", "coverage_period", "industry"]
+                missing_fields = [field for field in required_fields if not result.get(field)]
                 
-                # JSON 유효성 검사
-                try:
-                    result = json.loads(json_content)
-                    print(f"✅ [API] JSON 파싱 성공: {result}")
-                    
-                    # 필수 필드 검증
-                    required_fields = ["peril", "description", "region", "coverage_period", "industry"]
-                    missing_fields = [field for field in required_fields if not result.get(field)]
-                    
-                    if missing_fields:
-                        print(f"⚠️ [API] 필수 필드 누락: {missing_fields}, fallback 사용")
-                        return self._fallback_peril_extraction(user_input)
-                    
-                    # 데이터 타입 검증
-                    if not isinstance(result["peril"], str) or not result["peril"].strip():
-                        print(f"⚠️ [API] peril 필드가 유효하지 않음, fallback 사용")
-                        return self._fallback_peril_extraction(user_input)
-                    
-                    print(f"🎉 [API] 완전한 결과 반환: {result}")
-                    return result
-                    
-                except json.JSONDecodeError as parse_error:
-                    print(f"❌ [API] 추출된 JSON 파싱 실패: {str(parse_error)}")
-                    print(f"🔍 [API] 파싱 실패한 내용: {repr(json_content)}")
-                    print(f"🔍 [API] 파싱 오류 위치: line {parse_error.lineno}, col {parse_error.colno}")
+                if missing_fields:
+                    print(f"⚠️ [API] 필수 필드 누락: {missing_fields}, fallback 사용")
                     return self._fallback_peril_extraction(user_input)
+                
+                # 데이터 타입 검증
+                if not isinstance(result["peril"], str) or not result["peril"].strip():
+                    print(f"⚠️ [API] peril 필드가 유효하지 않음, fallback 사용")
+                    return self._fallback_peril_extraction(user_input)
+                
+                print(f"🎉 [API] 완전한 결과 반환: {result}")
+                return result
             else:
-                print(f"❌ [API] 유효한 JSON 구조를 찾을 수 없음")
+                print(f"🔄 [API] JSON 파싱 실패 - Fallback 사용: {user_input}")
                 return self._fallback_peril_extraction(user_input)
+                
         except Exception as e:
             print(f"❌ [API] LLM 호출 실패: {str(e)}")
-            print(f"❌ [API] 오류 타입: {type(e)}")
-            print(f"❌ [API] 오류 repr: {repr(e)}")
-            if response:
-                print(f"🔍 [API] 응답 내용 (처음 500자): {response.content[:500]}")
-            else:
-                print(f"🔍 [API] 응답 객체 없음")
-            
-            # 스택 트레이스 출력
-            import traceback
-            print(f"🔍 [API] 스택 트레이스:")
-            traceback.print_exc()
-            
             # Fallback: 키워드 기반 매핑
             print(f"🔄 [API] Fallback 사용: {user_input}")
             return self._fallback_peril_extraction(user_input)
@@ -613,6 +545,58 @@ Design principles:
         except (json.JSONDecodeError, Exception):
             # Fallback: 기본 검증 통과
             return {"valid": True, "issues": [], "suggestions": []}
+    
+    def _parse_llm_json_response(self, content: str, context: str) -> Optional[Dict]:
+        """
+        LLM 응답에서 JSON을 안전하게 파싱
+        
+        Args:
+            content: LLM 응답 내용
+            context: 로깅을 위한 컨텍스트 (예: "Peril extraction", "Trigger metrics")
+            
+        Returns:
+            파싱된 JSON 딕셔너리 또는 None
+        """
+        try:
+            # 기본 정리
+            content = content.strip()
+            
+            # 코드 블록 제거
+            if content.startswith("```json"):
+                content = content[7:]
+            elif content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            
+            content = content.strip()
+            
+            # 이중 중괄호 처리 - LangChain 템플릿에서 이스케이프된 것을 원래대로
+            content = content.replace('{{', '{').replace('}}', '}')
+            
+            # JSON 추출 - 첫 번째 { 부터 마지막 } 까지
+            start_idx = content.find('{')
+            end_idx = content.rfind('}')
+            
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_content = content[start_idx:end_idx+1]
+                print(f"🔍 [API] {context} JSON 추출: {json_content}")
+                
+                # JSON 파싱 시도
+                result = json.loads(json_content)
+                print(f"✅ [API] {context} JSON 파싱 성공: {result}")
+                return result
+            else:
+                print(f"❌ [API] {context} JSON 구조를 찾을 수 없음")
+                return None
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ [API] {context} JSON 파싱 실패: {str(e)}")
+            print(f"🔍 [API] 파싱 실패 내용: {content[:500]}...")
+            return None
+        except Exception as e:
+            print(f"❌ [API] {context} 예상치 못한 오류: {str(e)}")
+            return None
 
 
 # 편의 함수들
