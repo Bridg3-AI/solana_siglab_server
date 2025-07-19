@@ -7,13 +7,30 @@ class AgentConfig:
     """Configuration class for agent settings"""
     
     def __init__(self):
+        # OpenAI settings
         self.openai_api_key = self._get_openai_api_key()
         self.model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.3"))
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "1000"))
+        
+        # Agent settings
         self.max_iterations = int(os.getenv("AGENT_MAX_ITERATIONS", "10"))
         self.timeout = int(os.getenv("AGENT_TIMEOUT", "30"))
         self.debug = os.getenv("AGENT_DEBUG", "false").lower() == "true"
+        
+        # External API settings
+        self.openweather_api_key = os.getenv("OPENWEATHER_API_KEY")
+        self.accuweather_api_key = os.getenv("ACCUWEATHER_API_KEY")
+        self.flightaware_api_key = os.getenv("FLIGHTAWARE_API_KEY")
+        self.coingecko_api_key = os.getenv("COINGECKO_API_KEY")
+        
+        # Database settings
+        self.database_url = os.getenv("DATABASE_URL", "postgresql://localhost/solana_siglab")
+        self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        
+        # Cache settings
+        self.cache_ttl = int(os.getenv("CACHE_TTL", "300"))  # 5 minutes
+        self.enable_cache = os.getenv("ENABLE_CACHE", "true").lower() == "true"
     
     def _get_openai_api_key(self) -> str:
         """Get OpenAI API key from environment variable"""
