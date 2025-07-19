@@ -119,61 +119,329 @@ class SyntheticScenarioGenerator:
         return pd.DataFrame(scenarios)
     
     def _sample_frequency(self, frequency_prior: FrequencyPrior) -> int:
-        """빈도 분포에서 샘플링"""
+        """빈도 분포에서 샘플링 (강화된 엣지 케이스 처리)"""
+        
+        # None 값 방어 처리
+        if frequency_prior is None or frequency_prior.parameters is None:
+            print("⚠️ [SCENARIO] FrequencyPrior 또는 parameters가 None - 기본값 사용")
+            return np.random.poisson(1)
         
         dist_type = frequency_prior.distribution
         params = frequency_prior.parameters
         
-        if dist_type == DistributionType.NEGATIVE_BINOMIAL:
-            r = params["r"]
-            p = params["p"]
-            return np.random.negative_binomial(r, p)
-        
-        elif dist_type == DistributionType.POISSON:
-            lam = params["lambda"]
-            return np.random.poisson(lam)
-        
-        else:
-            # 기본값: Poisson(1)
+        try:
+            if dist_type == DistributionType.NEGATIVE_BINOMIAL:
+                return self._sample_negative_binomial(params)
+            elif dist_type == DistributionType.POISSON:
+                return self._sample_poisson(params)
+            else:
+                print(f"⚠️ [SCENARIO] 알 수 없는 빈도 분포: {dist_type} - 기본값 사용")
+                return np.random.poisson(1)
+                
+        except Exception as e:
+            print(f"⚠️ [SCENARIO] 빈도 샘플링 중 오류: {e} - 기본값 사용")
             return np.random.poisson(1)
     
+    def _sample_negative_binomial(self, params: dict) -> int:
+        """Negative Binomial 분포 샘플링 (다양한 파라미터 형태 지원)"""
+        
+        # r, p 형태
+        if "r" in params and "p" in params:
+            r = self._safe_float_conversion(params["r"], "r", 1.0)
+            p = self._safe_float_conversion(params["p"], "p", 0.5)
+            
+            # 파라미터 유효성 검증
+            if r <= 0:
+                print(f"⚠️ [SCENARIO] 유효하지 않은 r 값: {r} - 기본값 1.0 사용")
+                r = 1.0
+            if p <= 0 or p >= 1:
+                print(f"⚠️ [SCENARIO] 유효하지 않은 p 값: {p} - 기본값 0.5 사용")
+                p = 0.5
+                
+            return np.random.negative_binomial(r, p)
+        
+        # n, p 형태 (alternative parameterization)
+        elif "n" in params and "p" in params:
+            n = self._safe_float_conversion(params["n"], "n", 1.0)
+            p = self._safe_float_conversion(params["p"], "p", 0.5)
+            
+            if n <= 0: n = 1.0
+            if p <= 0 or p >= 1: p = 0.5
+                
+            return np.random.negative_binomial(n, p)
+        
+        # size, prob 형태
+        elif "size" in params and "prob" in params:
+            size = self._safe_float_conversion(params["size"], "size", 1.0)
+            prob = self._safe_float_conversion(params["prob"], "prob", 0.5)
+            
+            if size <= 0: size = 1.0
+            if prob <= 0 or prob >= 1: prob = 0.5
+                
+            return np.random.negative_binomial(size, prob)
+        
+        # mu, phi 형태 (mean, overdispersion)
+        elif "mu" in params and "phi" in params:
+            mu = self._safe_float_conversion(params["mu"], "mu", 1.0)
+            phi = self._safe_float_conversion(params["phi"], "phi", 1.0)
+            
+            if mu <= 0: mu = 1.0
+            if phi <= 0: phi = 1.0
+            
+            # mu = r * (1-p) / p, var = mu + phi * mu^2
+            # Convert to r, p parameterization
+            p = mu / (mu + phi * mu * mu)
+            r = mu * p / (1 - p)
+            
+            if p <= 0 or p >= 1: p = 0.5
+            if r <= 0: r = 1.0
+                
+            return np.random.negative_binomial(r, p)
+        
+        else:
+            print(f"⚠️ [SCENARIO] 알 수 없는 Negative Binomial 파라미터: {params} - 기본값 사용")
+            return np.random.negative_binomial(1, 0.5)
+    
+    def _sample_poisson(self, params: dict) -> int:
+        """Poisson 분포 샘플링 (다양한 파라미터 형태 지원)"""
+        
+        # lambda 형태
+        if "lambda" in params:
+            lam = self._safe_float_conversion(params["lambda"], "lambda", 1.0)
+        elif "lam" in params:
+            lam = self._safe_float_conversion(params["lam"], "lam", 1.0)
+        elif "rate" in params:
+            lam = self._safe_float_conversion(params["rate"], "rate", 1.0)
+        elif "mu" in params:
+            lam = self._safe_float_conversion(params["mu"], "mu", 1.0)
+        else:
+            print(f"⚠️ [SCENARIO] 알 수 없는 Poisson 파라미터: {params} - 기본값 사용")
+            lam = 1.0
+        
+        # 파라미터 유효성 검증
+        if lam <= 0:
+            print(f"⚠️ [SCENARIO] 유효하지 않은 lambda 값: {lam} - 기본값 1.0 사용")
+            lam = 1.0
+        
+        return np.random.poisson(lam)
+    
+    def _safe_float_conversion(self, value, param_name: str, default_value: float) -> float:
+        """안전한 float 변환 (None, string 등 처리)"""
+        
+        if value is None:
+            print(f"⚠️ [SCENARIO] {param_name} 값이 None - 기본값 {default_value} 사용")
+            return default_value
+        
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            print(f"⚠️ [SCENARIO] {param_name} 값 변환 실패 ({value}) - 기본값 {default_value} 사용")
+            return default_value
+    
     def _sample_severity(self, severity_prior: SeverityPrior) -> float:
-        """심도 분포에서 샘플링"""
+        """심도 분포에서 샘플링 (강화된 엣지 케이스 처리)"""
+        
+        # None 값 방어 처리
+        if severity_prior is None or severity_prior.parameters is None:
+            print("⚠️ [SCENARIO] SeverityPrior 또는 parameters가 None - 기본값 사용")
+            return np.random.lognormal(1, 0.5)
         
         dist_type = severity_prior.distribution
         params = severity_prior.parameters
         
-        if dist_type == DistributionType.LOGNORMAL:
-            mu = params["mu"]
-            sigma = params["sigma"]
-            return np.random.lognormal(mu, sigma)
+        try:
+            if dist_type == DistributionType.LOGNORMAL:
+                return self._sample_lognormal(params)
+            elif dist_type == DistributionType.GAMMA:
+                return self._sample_gamma(params)
+            elif dist_type == DistributionType.EXPONENTIAL:
+                return self._sample_exponential(params)
+            elif dist_type == DistributionType.NORMAL:
+                return self._sample_normal(params)
+            else:
+                print(f"⚠️ [SCENARIO] 알 수 없는 심도 분포: {dist_type} - 기본값 사용")
+                return np.random.lognormal(1, 0.5)
+                
+        except Exception as e:
+            print(f"⚠️ [SCENARIO] 심도 샘플링 중 오류: {e} - 기본값 사용")
+            return np.random.lognormal(1, 0.5)
+    
+    def _sample_lognormal(self, params: dict) -> float:
+        """LogNormal 분포 샘플링 (다양한 파라미터 형태 지원)"""
         
-        elif dist_type == DistributionType.GAMMA:
-            if "alpha" in params and "beta" in params:
-                alpha = params["alpha"]
-                beta = params["beta"]
-                return np.random.gamma(alpha, 1/beta)
-            elif "shape" in params and "scale" in params:
-                shape = params["shape"]
-                scale = params["scale"]
-                return np.random.gamma(shape, scale)
+        # mu, sigma 형태 (표준)
+        if "mu" in params and "sigma" in params:
+            mu = self._safe_float_conversion(params["mu"], "mu", 1.0)
+            sigma = self._safe_float_conversion(params["sigma"], "sigma", 0.5)
+        # mean, std 형태
+        elif "mean" in params and "std" in params:
+            mu = self._safe_float_conversion(params["mean"], "mean", 1.0)
+            sigma = self._safe_float_conversion(params["std"], "std", 0.5)
+        # location, scale 형태
+        elif "location" in params and "scale" in params:
+            mu = self._safe_float_conversion(params["location"], "location", 1.0)
+            sigma = self._safe_float_conversion(params["scale"], "scale", 0.5)
+        # m, s 형태
+        elif "m" in params and "s" in params:
+            mu = self._safe_float_conversion(params["m"], "m", 1.0)
+            sigma = self._safe_float_conversion(params["s"], "s", 0.5)
+        else:
+            print(f"⚠️ [SCENARIO] 알 수 없는 LogNormal 파라미터: {params} - 기본값 사용")
+            mu, sigma = 1.0, 0.5
         
-        elif dist_type == DistributionType.EXPONENTIAL:
-            if "lambda" in params:
-                lam = params["lambda"]
-                return np.random.exponential(1/lam)
-            elif "scale" in params:
-                scale = params["scale"]
-                return np.random.exponential(scale)
+        # 파라미터 유효성 검증
+        if sigma <= 0:
+            print(f"⚠️ [SCENARIO] 유효하지 않은 sigma 값: {sigma} - 기본값 0.5 사용")
+            sigma = 0.5
         
-        elif dist_type == DistributionType.NORMAL:
-            mu = params.get("mu", 0)
-            sigma = params.get("sigma", 1)
-            return max(0, np.random.normal(mu, sigma))  # 음수 방지
+        return np.random.lognormal(mu, sigma)
+    
+    def _sample_gamma(self, params: dict) -> float:
+        """Gamma 분포 샘플링 (다양한 파라미터 형태 지원)"""
+        
+        # alpha, beta 형태 (shape, rate)
+        if "alpha" in params and "beta" in params:
+            alpha = self._safe_float_conversion(params["alpha"], "alpha", 2.0)
+            beta = self._safe_float_conversion(params["beta"], "beta", 1.0)
+            
+            if alpha <= 0: alpha = 2.0
+            if beta <= 0: beta = 1.0
+            
+            return np.random.gamma(alpha, 1/beta)
+        
+        # shape, scale 형태
+        elif "shape" in params and "scale" in params:
+            shape = self._safe_float_conversion(params["shape"], "shape", 2.0)
+            scale = self._safe_float_conversion(params["scale"], "scale", 1.0)
+            
+            if shape <= 0: shape = 2.0
+            if scale <= 0: scale = 1.0
+            
+            return np.random.gamma(shape, scale)
+        
+        # shape, rate 형태
+        elif "shape" in params and "rate" in params:
+            shape = self._safe_float_conversion(params["shape"], "shape", 2.0)
+            rate = self._safe_float_conversion(params["rate"], "rate", 1.0)
+            
+            if shape <= 0: shape = 2.0
+            if rate <= 0: rate = 1.0
+            
+            return np.random.gamma(shape, 1/rate)
+        
+        # k, theta 형태 (alternative naming)
+        elif "k" in params and "theta" in params:
+            k = self._safe_float_conversion(params["k"], "k", 2.0)
+            theta = self._safe_float_conversion(params["theta"], "theta", 1.0)
+            
+            if k <= 0: k = 2.0
+            if theta <= 0: theta = 1.0
+            
+            return np.random.gamma(k, theta)
+        
+        # mu, sigma 형태 (LLM이 잘못 응답한 경우)
+        elif "mu" in params and "sigma" in params:
+            mu = self._safe_float_conversion(params["mu"], "mu", 2.0)
+            sigma = self._safe_float_conversion(params["sigma"], "sigma", 1.0)
+            
+            if mu <= 0: mu = 2.0
+            if sigma <= 0: sigma = 1.0
+            
+            # Method of moments: alpha = (mu/sigma)^2, beta = sigma^2/mu
+            var = sigma ** 2
+            alpha = (mu ** 2) / var
+            beta = var / mu
+            
+            if alpha <= 0: alpha = 2.0
+            if beta <= 0: beta = 1.0
+            
+            return np.random.gamma(alpha, beta)
+        
+        # mean, var 형태
+        elif "mean" in params and ("var" in params or "variance" in params):
+            mean = self._safe_float_conversion(params["mean"], "mean", 2.0)
+            var = self._safe_float_conversion(params.get("var", params.get("variance", 1.0)), "variance", 1.0)
+            
+            if mean <= 0: mean = 2.0
+            if var <= 0: var = 1.0
+            
+            # Method of moments
+            alpha = (mean ** 2) / var
+            beta = var / mean
+            
+            if alpha <= 0: alpha = 2.0
+            if beta <= 0: beta = 1.0
+            
+            return np.random.gamma(alpha, beta)
         
         else:
-            # 기본값: LogNormal(1, 0.5)
-            return np.random.lognormal(1, 0.5)
+            print(f"⚠️ [SCENARIO] 알 수 없는 Gamma 파라미터: {params} - 기본값 사용")
+            return np.random.gamma(2.0, 1.0)
+    
+    def _sample_exponential(self, params: dict) -> float:
+        """Exponential 분포 샘플링 (다양한 파라미터 형태 지원)"""
+        
+        # lambda 형태 (rate parameter)
+        if "lambda" in params:
+            lam = self._safe_float_conversion(params["lambda"], "lambda", 1.0)
+            if lam <= 0: lam = 1.0
+            return np.random.exponential(1/lam)
+        
+        # rate 형태
+        elif "rate" in params:
+            rate = self._safe_float_conversion(params["rate"], "rate", 1.0)
+            if rate <= 0: rate = 1.0
+            return np.random.exponential(1/rate)
+        
+        # scale 형태
+        elif "scale" in params:
+            scale = self._safe_float_conversion(params["scale"], "scale", 1.0)
+            if scale <= 0: scale = 1.0
+            return np.random.exponential(scale)
+        
+        # beta 형태 (alternative naming)
+        elif "beta" in params:
+            beta = self._safe_float_conversion(params["beta"], "beta", 1.0)
+            if beta <= 0: beta = 1.0
+            return np.random.exponential(1/beta)
+        
+        # mean 형태
+        elif "mean" in params:
+            mean = self._safe_float_conversion(params["mean"], "mean", 1.0)
+            if mean <= 0: mean = 1.0
+            return np.random.exponential(mean)
+        
+        else:
+            print(f"⚠️ [SCENARIO] 알 수 없는 Exponential 파라미터: {params} - 기본값 사용")
+            return np.random.exponential(1.0)
+    
+    def _sample_normal(self, params: dict) -> float:
+        """Normal 분포 샘플링 (음수 방지, 다양한 파라미터 형태 지원)"""
+        
+        # mu, sigma 형태
+        if "mu" in params and "sigma" in params:
+            mu = self._safe_float_conversion(params["mu"], "mu", 1.0)
+            sigma = self._safe_float_conversion(params["sigma"], "sigma", 1.0)
+        # mean, std 형태
+        elif "mean" in params and ("std" in params or "stddev" in params):
+            mu = self._safe_float_conversion(params["mean"], "mean", 1.0)
+            sigma = self._safe_float_conversion(params.get("std", params.get("stddev", 1.0)), "std", 1.0)
+        # location, scale 형태
+        elif "location" in params and "scale" in params:
+            mu = self._safe_float_conversion(params["location"], "location", 1.0)
+            sigma = self._safe_float_conversion(params["scale"], "scale", 1.0)
+        else:
+            print(f"⚠️ [SCENARIO] 알 수 없는 Normal 파라미터: {params} - 기본값 사용")
+            mu, sigma = 1.0, 1.0
+        
+        # 파라미터 유효성 검증
+        if sigma <= 0:
+            print(f"⚠️ [SCENARIO] 유효하지 않은 sigma 값: {sigma} - 기본값 1.0 사용")
+            sigma = 1.0
+        
+        # 음수 방지를 위한 Truncated Normal 근사
+        sample = np.random.normal(mu, sigma)
+        return max(0.001, sample)  # 매우 작은 양수로 제한
     
     def _apply_payout_formula(self, scenarios: pd.DataFrame, canvas: PerilCanvas) -> pd.DataFrame:
         """Peril Canvas의 지급 공식을 시나리오에 적용"""
@@ -219,64 +487,149 @@ class SyntheticScenarioGenerator:
         return scenarios
     
     def _check_trigger_condition(self, severity: float, trigger_condition) -> bool:
-        """트리거 조건 확인"""
+        """트리거 조건 확인 (강화된 엣지 케이스 처리)"""
         
-        threshold = trigger_condition.threshold
-        operator = trigger_condition.operator
+        # None 값 및 기본 유효성 검증
+        if severity is None or trigger_condition is None:
+            return False
         
-        if operator == ">=":
-            return severity >= threshold
-        elif operator == "<=":
-            return severity <= threshold
-        elif operator == ">":
-            return severity > threshold
-        elif operator == "<":
-            return severity < threshold
-        elif operator == "==":
-            return abs(severity - threshold) < 0.001  # 부동소수점 비교
-        else:
-            return severity >= threshold  # 기본값
+        # Severity 값 유효성 검증
+        severity = self._safe_float_conversion(severity, "severity", 0.0)
+        if severity is None or not isinstance(severity, (int, float)):
+            return False
+        
+        # Trigger condition 속성 확인
+        try:
+            threshold = getattr(trigger_condition, 'threshold', None)
+            operator = getattr(trigger_condition, 'operator', None)
+        except AttributeError:
+            print("⚠️ [SCENARIO] trigger_condition 속성 접근 실패")
+            return False
+        
+        # Threshold 값 유효성 검증
+        threshold = self._safe_float_conversion(threshold, "threshold", 0.0)
+        if threshold is None:
+            return False
+        
+        # Operator 유효성 검증
+        if operator is None or not isinstance(operator, str):
+            print(f"⚠️ [SCENARIO] 유효하지 않은 operator: {operator} - 기본값 '>=' 사용")
+            operator = ">="
+        
+        # 연산 수행
+        try:
+            if operator == ">=":
+                return float(severity) >= float(threshold)
+            elif operator == "<=":
+                return float(severity) <= float(threshold)
+            elif operator == ">":
+                return float(severity) > float(threshold)
+            elif operator == "<":
+                return float(severity) < float(threshold)
+            elif operator == "==":
+                return abs(float(severity) - float(threshold)) < 0.001  # 부동소수점 비교
+            elif operator == "!=":
+                return abs(float(severity) - float(threshold)) >= 0.001
+            else:
+                print(f"⚠️ [SCENARIO] 알 수 없는 operator: {operator} - 기본값 '>=' 사용")
+                return float(severity) >= float(threshold)
+                
+        except (TypeError, ValueError, OverflowError) as e:
+            print(f"⚠️ [SCENARIO] 트리거 조건 비교 중 오류: {e}, severity={severity}, threshold={threshold}, operator={operator}")
+            return False
     
     def _calculate_event_payout(self, severity: float, trigger_condition, payout_curve) -> float:
-        """개별 이벤트의 지급액 계산"""
+        """개별 이벤트의 지급액 계산 (강화된 엣지 케이스 처리)"""
         
-        threshold = trigger_condition.threshold
-        curve_type = payout_curve.curve_type
-        base_amount = payout_curve.base_amount
-        max_payout = payout_curve.max_payout
-        multiplier = payout_curve.multiplier
+        # 기본 유효성 검증
+        if severity is None or trigger_condition is None or payout_curve is None:
+            return 0.0
         
-        # 트리거 초과 정도 계산
-        if trigger_condition.operator in [">=", ">"]:
-            excess = max(0, severity - threshold)
-        elif trigger_condition.operator in ["<=", "<"]:
-            excess = max(0, threshold - severity)
-        else:
-            excess = abs(severity - threshold)
+        # Severity 값 변환
+        severity = self._safe_float_conversion(severity, "severity", 0.0)
+        if severity is None:
+            return 0.0
         
-        # 지급 곡선에 따른 계산
-        if curve_type == CurveType.LINEAR:
-            payout = base_amount + (excess * multiplier)
+        # Trigger condition 속성 추출
+        try:
+            threshold = self._safe_float_conversion(getattr(trigger_condition, 'threshold', 0.0), "threshold", 0.0)
+            operator = getattr(trigger_condition, 'operator', ">=")
+        except (AttributeError, TypeError):
+            print("⚠️ [SCENARIO] trigger_condition 속성 추출 실패")
+            return 0.0
         
-        elif curve_type == CurveType.STEP:
-            # 단계별 지급 (excess를 기준으로)
-            steps = int(excess)
-            payout = base_amount + (steps * multiplier)
+        # Payout curve 속성 추출
+        try:
+            curve_type = getattr(payout_curve, 'curve_type', CurveType.LINEAR)
+            base_amount = self._safe_float_conversion(getattr(payout_curve, 'base_amount', 0.0), "base_amount", 0.0)
+            max_payout = self._safe_float_conversion(getattr(payout_curve, 'max_payout', 1000000.0), "max_payout", 1000000.0)
+            multiplier = self._safe_float_conversion(getattr(payout_curve, 'multiplier', 1.0), "multiplier", 1.0)
+        except (AttributeError, TypeError) as e:
+            print(f"⚠️ [SCENARIO] payout_curve 속성 추출 실패: {e}")
+            return 0.0
         
-        elif curve_type == CurveType.EXPONENTIAL:
-            # 지수적 증가
-            payout = base_amount * (1 + excess) ** (multiplier / 1000)
+        # 파라미터 유효성 검증
+        if base_amount < 0:
+            base_amount = 0.0
+        if max_payout <= 0:
+            max_payout = 1000000.0
+        if multiplier < 0:
+            multiplier = 1.0
         
-        elif curve_type == CurveType.LOGARITHMIC:
-            # 로그적 증가
-            payout = base_amount + multiplier * np.log(1 + excess)
-        
-        else:
-            # 기본값: 선형
-            payout = base_amount + (excess * multiplier)
-        
-        # 최대 지급액 제한
-        return min(payout, max_payout)
+        try:
+            # 트리거 초과 정도 계산
+            if operator in [">=", ">"]:
+                excess = max(0.0, float(severity) - float(threshold))
+            elif operator in ["<=", "<"]:
+                excess = max(0.0, float(threshold) - float(severity))
+            elif operator == "==":
+                # 정확히 일치하는 경우만 지급
+                excess = 1.0 if abs(float(severity) - float(threshold)) < 0.001 else 0.0
+            else:
+                excess = abs(float(severity) - float(threshold))
+            
+            # 지급 곡선에 따른 계산
+            if curve_type == CurveType.LINEAR:
+                payout = base_amount + (excess * multiplier)
+            elif curve_type == CurveType.STEP:
+                steps = max(0, int(excess))
+                payout = base_amount + (steps * multiplier)
+            elif curve_type == CurveType.EXPONENTIAL:
+                # 지수 곡선: 안전한 지수 계산
+                if excess > 0 and multiplier > 0:
+                    try:
+                        exp_factor = min(10.0, multiplier / 1000.0)  # 지수 폭발 방지
+                        payout = base_amount * ((1.0 + excess) ** exp_factor)
+                    except (OverflowError, ValueError):
+                        payout = max_payout  # 오버플로우 시 최대값
+                else:
+                    payout = base_amount
+            elif hasattr(CurveType, 'LOGARITHMIC') and curve_type == CurveType.LOGARITHMIC:
+                # 로그 곡선: 안전한 로그 계산
+                if excess > 0:
+                    try:
+                        payout = base_amount + multiplier * np.log(1.0 + excess)
+                    except (ValueError, OverflowError):
+                        payout = base_amount + multiplier * 1.0  # 로그 오류 시 기본값
+                else:
+                    payout = base_amount
+            else:
+                # 기본: Linear
+                payout = base_amount + (excess * multiplier)
+            
+            # 최대 지급액 제한 및 음수 방지
+            payout = max(0.0, min(float(payout), float(max_payout)))
+            
+            # 무한대 및 NaN 방지
+            if not np.isfinite(payout):
+                print(f"⚠️ [SCENARIO] 무한대 또는 NaN 지급액 - 기본값 사용: {payout}")
+                payout = base_amount
+            
+            return payout
+            
+        except (TypeError, ValueError, OverflowError) as e:
+            print(f"⚠️ [SCENARIO] 지급액 계산 중 오류: {e} - 기본값 사용")
+            return base_amount
     
     async def _generate_tail_scenarios(self, peril: str, region: str, count: int = 10) -> List[Dict]:
         """LLM을 사용한 Tail Risk 시나리오 생성"""

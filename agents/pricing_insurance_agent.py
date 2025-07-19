@@ -6,11 +6,39 @@ LLM-Lite Parametric Pricing Insurance Agent
 """
 
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 from langgraph.graph import StateGraph, END
+from typing_extensions import TypedDict
 
 from .core.state import LLMPricingState
+
+# LangGraph와 호환되는 딕셔너리 타입
+class PricingStateDict(TypedDict, total=False):
+    messages: List[Dict[str, str]]
+    plan: str
+    result: Optional[Dict[str, Any]]
+    event_type: Optional[str]
+    tool_calls: Optional[str]
+    tool_parameters: Optional[Dict[str, Any]]
+    event_data: Optional[Dict[str, Any]]
+    loss_ratio: Optional[float]
+    
+    # Pricing 관련 필드
+    peril_canvas: Optional[Dict[str, Any]]
+    frequency_prior: Optional[Dict[str, Any]]
+    severity_prior: Optional[Dict[str, Any]]
+    scenarios: Optional[Dict[str, Any]]
+    pricing_result: Optional[Dict[str, Any]]
+    audit_trail: Optional[Dict[str, Any]]
+    llm_conversations: Optional[List[Dict[str, str]]]
+    validation_checks: Optional[Dict[str, bool]]
+    
+    # 메타데이터
+    process_id: Optional[str]
+    pricing_mode: Optional[str]
+    simulation_years: Optional[int]
+
 from .pricing.nodes import (
     peril_canvas_node,
     prior_extraction_node,
@@ -37,7 +65,7 @@ class PricingInsuranceAgent:
     def _create_graph(self) -> StateGraph:
         """LLM-Lite Pricing을 위한 LangGraph 생성"""
         
-        graph = StateGraph(LLMPricingState)
+        graph = StateGraph(PricingStateDict)
         
         # 6단계 노드 추가
         graph.add_node("peril_canvas", peril_canvas_node)
@@ -105,25 +133,34 @@ class PricingInsuranceAgent:
         }
         
         try:
-            # LangGraph 실행
-            final_state = await self.agent.ainvoke(initial_state)
+            # 임시로 run_step_by_step 사용 (LangGraph ainvoke 문제 우회)
+            print("🔄 LangGraph ainvoke 대신 step-by-step 실행 사용")
+            step_results = await self.run_step_by_step(user_input)
             
-            # 결과 추출 및 포맷팅
-            result = final_state.get("result", {})
-            
-            if result.get("status") == "success":
+            # 최종 단계 결과 확인
+            final_step = step_results.get("step5_pricing_report")
+            if final_step and final_step["status"] == "success":
+                result = final_step["final_result"]
+                
                 # 성공 시 감사 추적 생성 (옵션)
                 if self.enable_audit_trail:
-                    audit_trail = await self._create_audit_trail(final_state, user_input)
+                    # step-by-step에서는 final_state 대신 결과에서 데이터 추출
+                    audit_trail = await self._create_audit_trail_from_result(result, user_input)
                     result["audit_trail"] = audit_trail
                 
                 # 기존 형식과의 호환성 보장
                 return self._format_compatible_result(result)
             else:
-                # 실패 시 오류 정보 반환
+                # 단계별 실행에서 실패한 경우
+                error_msg = "단계별 실행 실패"
+                for step_key, step_result in step_results.items():
+                    if isinstance(step_result, dict) and step_result.get("error"):
+                        error_msg = step_result["error"]
+                        break
+                
                 return {
                     "status": "error",
-                    "error": result.get("error", "알 수 없는 오류"),
+                    "error": error_msg,
                     "process_id": process_id,
                     "pricing_mode": "llm_lite"
                 }
@@ -217,6 +254,28 @@ class PricingInsuranceAgent:
             # 감사 추적 생성 실패 시 None 반환 (핵심 기능에 영향 없음)
             return None
     
+    async def _create_audit_trail_from_result(self, result: Dict[str, Any], user_input: str) -> Optional[Dict[str, Any]]:
+        """결과 데이터로부터 감사 추적 정보 생성 (step-by-step용)"""
+        
+        try:
+            # step-by-step 실행에서는 감사 추적을 간소화
+            return {
+                "process_id": result.get("process_id", "unknown"),
+                "user_input": user_input,
+                "execution_mode": "step_by_step",
+                "timestamp": datetime.now().isoformat(),
+                "result_summary": {
+                    "status": result.get("status"),
+                    "expected_loss": result.get("pricing_result", {}).get("expected_loss"),
+                    "gross_premium": result.get("pricing_result", {}).get("gross_premium"),
+                    "risk_level": result.get("pricing_result", {}).get("risk_level")
+                }
+            }
+            
+        except Exception as e:
+            # 감사 추적 생성 실패 시 None 반환
+            return None
+    
     def get_graph_visualization(self) -> str:
         """그래프 시각화 (디버깅용)"""
         try:
@@ -255,10 +314,11 @@ graph TD
             # 1단계: Peril Canvas
             print("🎯 1단계: Peril Canvas 생성...")
             state = await peril_canvas_node(state)
+            result = state.get("result") or {}
             step_results["step1_peril_canvas"] = {
-                "status": "success" if not state.get("result", {}).get("error") else "error",
+                "status": "success" if not result.get("error") else "error",
                 "canvas": state.get("peril_canvas"),
-                "error": state.get("result", {}).get("error")
+                "error": result.get("error")
             }
             
             if step_results["step1_peril_canvas"]["status"] == "error":
@@ -267,11 +327,12 @@ graph TD
             # 2단계: Prior 추출
             print("📊 2단계: Prior 추출...")
             state = await prior_extraction_node(state)
+            result = state.get("result") or {}
             step_results["step2_prior_extraction"] = {
-                "status": "success" if not state.get("result", {}).get("error") else "error",
+                "status": "success" if not result.get("error") else "error",
                 "frequency_prior": state.get("frequency_prior"),
                 "severity_prior": state.get("severity_prior"),
-                "error": state.get("result", {}).get("error")
+                "error": result.get("error")
             }
             
             if step_results["step2_prior_extraction"]["status"] == "error":
@@ -280,10 +341,11 @@ graph TD
             # 3단계: 시나리오 생성
             print("🎲 3단계: 시나리오 생성...")
             state = await scenario_generation_node(state)
+            result = state.get("result") or {}
             step_results["step3_scenario_generation"] = {
-                "status": "success" if not state.get("result", {}).get("error") else "error",
-                "scenario_summary": state.get("scenarios", {}).get("summary"),
-                "error": state.get("result", {}).get("error")
+                "status": "success" if not result.get("error") else "error",
+                "scenario_summary": state.get("scenarios", {}).get("summary") if state.get("scenarios") else None,
+                "error": result.get("error")
             }
             
             if step_results["step3_scenario_generation"]["status"] == "error":
@@ -292,10 +354,11 @@ graph TD
             # 4단계: 가격 계산
             print("💰 4단계: 가격 계산...")
             state = await pricing_calculation_node(state)
+            result = state.get("result") or {}
             step_results["step4_pricing_calculation"] = {
-                "status": "success" if not state.get("result", {}).get("error") else "error",
+                "status": "success" if not result.get("error") else "error",
                 "pricing_result": state.get("pricing_result"),
-                "error": state.get("result", {}).get("error")
+                "error": result.get("error")
             }
             
             if step_results["step4_pricing_calculation"]["status"] == "error":
@@ -304,10 +367,11 @@ graph TD
             # 5단계: 리포트 생성
             print("📋 5단계: 리포트 생성...")
             state = await pricing_report_node(state)
+            result = state.get("result") or {}
             step_results["step5_pricing_report"] = {
-                "status": "success" if state.get("result", {}).get("status") == "success" else "error",
-                "final_result": state.get("result"),
-                "error": state.get("result", {}).get("error")
+                "status": "success" if result.get("status") == "success" else "error",
+                "final_result": result,
+                "error": result.get("error")
             }
             
             print("✅ 모든 단계 완료!")

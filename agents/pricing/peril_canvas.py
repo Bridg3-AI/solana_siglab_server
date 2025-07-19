@@ -28,12 +28,20 @@ class PerilCanvasGenerator:
     def llm(self) -> ChatOpenAI:
         """지연 초기화된 LLM 인스턴스"""
         if self._llm is None:
+            print(f"🔧 [CONFIG] LLM 초기화:")
+            print(f"   모델: {self.config.model_name}")
+            print(f"   API 키 존재: {bool(self.config.openai_api_key)}")
+            print(f"   API 키 첫 10자: {self.config.openai_api_key[:10] if self.config.openai_api_key else 'None'}")
+            
             self._llm = ChatOpenAI(
                 model=self.config.model_name,
-                temperature=0.2,  # 일관성을 위해 낮은 temperature
-                max_tokens=2000,
-                api_key=self.config.openai_api_key
+                temperature=0.1,  # 더 낮은 temperature로 일관성 향상
+                max_tokens=6000,  # 토큰 수 줄여서 완전한 응답 보장
+                api_key=self.config.openai_api_key,
+                request_timeout=30,  # 타임아웃 설정
+                max_retries=2  # 재시도 설정
             )
+            print(f"✅ [CONFIG] LLM 초기화 완료")
         return self._llm
     
     async def generate_canvas_from_input(self, user_input: str) -> PerilCanvas:
@@ -46,53 +54,148 @@ class PerilCanvasGenerator:
         Returns:
             생성된 PerilCanvas 객체
         """
-        # 1단계: 위험 타입 및 기본 정보 추출
-        peril_info = await self._extract_peril_info(user_input)
-        
-        # 2단계: 트리거 지표 추천
-        trigger_metrics = await self._suggest_trigger_metrics(
-            peril_info["peril"], peril_info["description"]
-        )
-        
-        # 3단계: 지급 구조 설계
-        payout_structure = await self._design_payout_structure(
-            peril_info["peril"], trigger_metrics["primary_metric"]
-        )
-        
-        # 4단계: PerilCanvas 객체 구성
-        return self._build_peril_canvas(peril_info, trigger_metrics, payout_structure)
+        try:
+            print(f"📋 [CANVAS] 1단계: 위험 타입 정보 추출 시작...")
+            # 1단계: 위험 타입 및 기본 정보 추출
+            peril_info = await self._extract_peril_info(user_input)
+            print(f"📋 [CANVAS] 1단계 완료: {peril_info}")
+            
+            print(f"📋 [CANVAS] 2단계: 트리거 지표 추천 시작...")
+            # 2단계: 트리거 지표 추천
+            trigger_metrics = await self._suggest_trigger_metrics(
+                peril_info["peril"], peril_info["description"]
+            )
+            print(f"📋 [CANVAS] 2단계 완료: {trigger_metrics}")
+            
+            print(f"📋 [CANVAS] 3단계: 지급 구조 설계 시작...")
+            # 3단계: 지급 구조 설계
+            payout_structure = await self._design_payout_structure(
+                peril_info["peril"], trigger_metrics["primary_metric"]
+            )
+            print(f"📋 [CANVAS] 3단계 완료: {payout_structure}")
+            
+            print(f"📋 [CANVAS] 4단계: PerilCanvas 객체 구성 시작...")
+            # 4단계: PerilCanvas 객체 구성
+            canvas = self._build_peril_canvas(peril_info, trigger_metrics, payout_structure)
+            print(f"📋 [CANVAS] 4단계 완료: {type(canvas)}")
+            return canvas
+            
+        except Exception as e:
+            print(f"❌ [CANVAS] Canvas 생성 중 오류: {str(e)}")
+            print(f"❌ [CANVAS] 오류 타입: {type(e)}")
+            import traceback
+            traceback.print_exc()
+            raise e
     
     async def _extract_peril_info(self, user_input: str) -> Dict[str, str]:
         """사용자 입력에서 위험 타입 및 기본 정보 추출"""
         
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """
-당신은 보험 상품 설계 전문가입니다. 사용자 입력을 분석하여 파라메트릭 보험 위험을 정의해주세요.
+            ("system", """You are an insurance risk analyzer. Extract information from user input and respond with valid JSON only.
 
-다음 JSON 형식으로 응답하세요:
-{
-    "peril": "위험 타입 (영문, 소문자, 언더스코어 사용)",
-    "description": "위험에 대한 상세 설명 (한국어)",
-    "region": "적용 지역",
-    "coverage_period": "커버리지 기간",
-    "industry": "관련 산업 분야"
-}
+CRITICAL: Your response must be a single, complete, valid JSON object. Do not include any text before or after the JSON.
 
-예시:
-- "태풍 보험" → peril: "typhoon"
-- "항공편 지연" → peril: "flight_delay"  
-- "게임 서버 다운" → peril: "server_downtime"
-- "스포츠 경기 취소" → peril: "sports_cancellation"
-"""),
-            ("human", "사용자 입력: {user_input}")
+Required format:
+{{
+    "peril": "risk_type_in_lowercase_english",
+    "description": "Brief Korean description",
+    "region": "Global",
+    "coverage_period": "annual", 
+    "industry": "general"
+}}
+
+Examples:
+Input: "태풍 보험" → Output: {{"peril": "typhoon", "description": "태풍 피해 보험", "region": "Korea", "coverage_period": "annual", "industry": "general"}}
+Input: "콘서트 취소" → Output: {{"peril": "concert_cancellation", "description": "콘서트 취소 보험", "region": "Global", "coverage_period": "annual", "industry": "general"}}"""),
+            ("human", "Input: {user_input}")
         ])
         
+        response = None
         try:
             messages = prompt.format_messages(user_input=user_input)
+            print(f"🔍 [API] Peril extraction LLM 호출 중... (입력: {user_input})")
+            print(f"🔍 [API] 프롬프트 메시지: {messages}")
+            
             response = await self.llm.ainvoke(messages)
-            return json.loads(response.content)
-        except (json.JSONDecodeError, Exception) as e:
+            print(f"✅ [API] LLM 응답 성공")
+            print(f"🔍 [API] 응답 타입: {type(response)}")
+            print(f"🔍 [API] 응답 속성: {dir(response)}")
+            print(f"🔍 [API] 전체 응답 (raw): {repr(response.content)}")
+            print(f"🔍 [API] 응답 길이: {len(response.content)} 문자")
+            
+            # JSON 정리 및 파싱 - 더 강화된 파싱 로직
+            content = response.content.strip()
+            print(f"🔍 [API] strip 후 내용: {repr(content)}")
+            
+            # 다양한 코드 블록 형식 제거
+            if content.startswith("```json"):
+                content = content[7:]
+                print(f"🔍 [API] ```json 제거 후: {repr(content)}")
+            elif content.startswith("```"):
+                content = content[3:]
+                print(f"🔍 [API] ``` 제거 후: {repr(content)}")
+            if content.endswith("```"):
+                content = content[:-3]
+                print(f"🔍 [API] 끝의 ``` 제거 후: {repr(content)}")
+            
+            # 추가 공백 및 불필요한 문자 제거
+            content = content.strip()
+            print(f"🔍 [API] 최종 strip 후: {repr(content)}")
+            
+            # JSON 추출 시도 - 첫 번째 { 부터 마지막 } 까지
+            start_idx = content.find('{')
+            end_idx = content.rfind('}')
+            print(f"🔍 [API] JSON 시작: {start_idx}, 끝: {end_idx}")
+            
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_content = content[start_idx:end_idx+1]
+                print(f"🔍 [API] 추출된 JSON: {repr(json_content)}")
+                
+                # JSON 유효성 검사
+                try:
+                    result = json.loads(json_content)
+                    print(f"✅ [API] JSON 파싱 성공: {result}")
+                    
+                    # 필수 필드 검증
+                    required_fields = ["peril", "description", "region", "coverage_period", "industry"]
+                    missing_fields = [field for field in required_fields if not result.get(field)]
+                    
+                    if missing_fields:
+                        print(f"⚠️ [API] 필수 필드 누락: {missing_fields}, fallback 사용")
+                        return self._fallback_peril_extraction(user_input)
+                    
+                    # 데이터 타입 검증
+                    if not isinstance(result["peril"], str) or not result["peril"].strip():
+                        print(f"⚠️ [API] peril 필드가 유효하지 않음, fallback 사용")
+                        return self._fallback_peril_extraction(user_input)
+                    
+                    print(f"🎉 [API] 완전한 결과 반환: {result}")
+                    return result
+                    
+                except json.JSONDecodeError as parse_error:
+                    print(f"❌ [API] 추출된 JSON 파싱 실패: {str(parse_error)}")
+                    print(f"🔍 [API] 파싱 실패한 내용: {repr(json_content)}")
+                    print(f"🔍 [API] 파싱 오류 위치: line {parse_error.lineno}, col {parse_error.colno}")
+                    return self._fallback_peril_extraction(user_input)
+            else:
+                print(f"❌ [API] 유효한 JSON 구조를 찾을 수 없음")
+                return self._fallback_peril_extraction(user_input)
+        except Exception as e:
+            print(f"❌ [API] LLM 호출 실패: {str(e)}")
+            print(f"❌ [API] 오류 타입: {type(e)}")
+            print(f"❌ [API] 오류 repr: {repr(e)}")
+            if response:
+                print(f"🔍 [API] 응답 내용 (처음 500자): {response.content[:500]}")
+            else:
+                print(f"🔍 [API] 응답 객체 없음")
+            
+            # 스택 트레이스 출력
+            import traceback
+            print(f"🔍 [API] 스택 트레이스:")
+            traceback.print_exc()
+            
             # Fallback: 키워드 기반 매핑
+            print(f"🔄 [API] Fallback 사용: {user_input}")
             return self._fallback_peril_extraction(user_input)
     
     def _fallback_peril_extraction(self, user_input: str) -> Dict[str, str]:
@@ -106,8 +209,18 @@ class PerilCanvasGenerator:
                 "description": "태풍으로 인한 재산 피해 및 사업 중단",
                 "region": "Korea"
             },
+            "concert_cancellation": {
+                "keywords": ["콘서트", "공연", "연주회", "뮤지컬", "오페라", "concert", "performance", "show"],
+                "description": "콘서트 및 공연 취소로 인한 손실",
+                "region": "Global"
+            },
+            "event_cancellation": {
+                "keywords": ["이벤트 취소", "행사 취소", "축제 취소", "스포츠 취소", "경기 취소"],
+                "description": "각종 이벤트 및 행사 취소로 인한 손실",
+                "region": "Global"
+            },
             "flight_delay": {
-                "keywords": ["항공", "비행기", "항공편", "지연", "취소", "flight"],
+                "keywords": ["항공편 지연", "항공편 취소", "비행기 지연", "flight delay", "flight cancellation"],
                 "description": "항공편 지연 및 취소로 인한 손실",
                 "region": "Global"
             },
@@ -151,31 +264,56 @@ class PerilCanvasGenerator:
         """위험 타입에 따른 트리거 지표 추천"""
         
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """
-당신은 보험 계리사입니다. 주어진 위험에 대해 객관적이고 측정 가능한 트리거 지표를 추천해주세요.
+            ("system", """You are an insurance actuary. Recommend objective and measurable trigger metrics for the given risk.
 
-다음 JSON 형식으로 응답하세요:
-{
-    "primary_metric": "주요 트리거 지표 (영문)",
-    "metric_description": "지표 설명 (한국어)",
-    "unit": "측정 단위",
-    "data_sources": ["데이터 소스1", "데이터 소스2"],
-    "threshold_guidance": "임계값 설정 가이드"
-}
+CRITICAL: Respond with valid JSON only. No markdown, no explanations, just JSON.
 
-예시:
-- 태풍: primary_metric: "central_pressure", unit: "hPa"
-- 항공 지연: primary_metric: "delay_minutes", unit: "minutes"
-- 서버 다운: primary_metric: "downtime_minutes", unit: "minutes"
-"""),
-            ("human", "위험: {peril}\n설명: {description}")
+Required format:
+{{
+    "primary_metric": "trigger_metric_in_english",
+    "metric_description": "Korean description",
+    "unit": "measurement_unit",
+    "data_sources": ["source1", "source2"],
+    "threshold_guidance": "Korean threshold guidance"
+}}
+
+Examples:
+- Typhoon: {{"primary_metric": "central_pressure", "unit": "hPa"}}
+- Flight delay: {{"primary_metric": "delay_minutes", "unit": "minutes"}}
+- Server down: {{"primary_metric": "downtime_minutes", "unit": "minutes"}}"""),
+            ("human", "Risk: {peril}\nDescription: {description}")
         ])
         
         try:
+            print(f"🔍 [API] 트리거 지표 LLM 호출 중... (위험: {peril})")
             messages = prompt.format_messages(peril=peril, description=description)
             response = await self.llm.ainvoke(messages)
-            return json.loads(response.content)
-        except (json.JSONDecodeError, Exception):
+            print(f"✅ [API] 트리거 지표 LLM 응답 성공")
+            print(f"🔍 [API] 응답 내용: {response.content}")
+            
+            # JSON 파싱 (1단계와 동일한 방식)
+            content = response.content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            elif content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+            
+            start_idx = content.find('{')
+            end_idx = content.rfind('}')
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_content = content[start_idx:end_idx+1]
+                result = json.loads(json_content)
+                print(f"✅ [API] 트리거 지표 JSON 파싱 성공: {result}")
+                return result
+            else:
+                print(f"❌ [API] 트리거 지표 JSON 구조 없음, fallback 사용")
+                return self._get_default_trigger_metric(peril)
+                
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"❌ [API] 트리거 지표 LLM 호출 실패: {str(e)}")
             # Fallback: 기본 지표 매핑
             return self._get_default_trigger_metric(peril)
     
@@ -189,6 +327,20 @@ class PerilCanvasGenerator:
                 "unit": "hPa",
                 "data_sources": ["JMA", "KMA", "NOAA"],
                 "threshold_guidance": "950 hPa 이하에서 지급 시작"
+            },
+            "concert_cancellation": {
+                "primary_metric": "event_intensity",
+                "metric_description": "콘서트 취소 심각도",
+                "unit": "scale",
+                "data_sources": ["Event Management APIs", "Entertainment Industry Data"],
+                "threshold_guidance": "레벨 3 이상에서 지급 시작"
+            },
+            "event_cancellation": {
+                "primary_metric": "event_intensity",
+                "metric_description": "이벤트 취소 심각도",
+                "unit": "scale", 
+                "data_sources": ["Event Management APIs", "Industry Statistics"],
+                "threshold_guidance": "레벨 2 이상에서 지급 시작"
             },
             "flight_delay": {
                 "primary_metric": "delay_minutes",
@@ -225,34 +377,59 @@ class PerilCanvasGenerator:
         """지급 구조 설계"""
         
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """
-당신은 보험 상품 설계자입니다. 주어진 위험과 트리거 지표에 대해 합리적인 지급 구조를 설계해주세요.
+            ("system", """You are an insurance product designer. Design a reasonable payout structure for the given risk and trigger metric.
 
-다음 JSON 형식으로 응답하세요:
-{
-    "curve_type": "linear|step|exponential",
-    "threshold": 임계값(숫자),
-    "operator": "<=|>=|>|<",
-    "base_amount": 기본지급액,
-    "max_payout": 최대지급액,
-    "multiplier": 지급배수,
-    "deductible": 공제액,
-    "rationale": "설계 근거"
-}
+CRITICAL: Respond with valid JSON only. No markdown, no explanations, just JSON.
 
-보험 상품 설계 원칙:
-1. 지급 임계값은 이벤트 심도와 비례해야 함
-2. 최대 지급액은 시장에서 수용 가능한 수준
-3. 지급 곡선은 위험의 특성을 반영해야 함
-"""),
-            ("human", "위험: {peril}\n트리거 지표: {metric}")
+Required format:
+{{
+    "curve_type": "linear",
+    "threshold": 3.0,
+    "operator": ">=",
+    "base_amount": 5000.0,
+    "max_payout": 500000.0,
+    "multiplier": 5000.0,
+    "deductible": 0.0,
+    "rationale": "Korean explanation"
+}}
+
+Design principles:
+1. Threshold should be proportional to event severity
+2. Maximum payout should be market-acceptable
+3. Payout curve should reflect risk characteristics"""),
+            ("human", "Risk: {peril}\nTrigger metric: {metric}")
         ])
         
         try:
+            print(f"🔍 [API] 지급 구조 LLM 호출 중... (위험: {peril}, 지표: {metric})")
             messages = prompt.format_messages(peril=peril, metric=metric)
             response = await self.llm.ainvoke(messages)
-            return json.loads(response.content)
-        except (json.JSONDecodeError, Exception):
+            print(f"✅ [API] 지급 구조 LLM 응답 성공")
+            print(f"🔍 [API] 응답 내용: {response.content}")
+            
+            # JSON 파싱 (1단계와 동일한 방식)
+            content = response.content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            elif content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+            
+            start_idx = content.find('{')
+            end_idx = content.rfind('}')
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_content = content[start_idx:end_idx+1]
+                result = json.loads(json_content)
+                print(f"✅ [API] 지급 구조 JSON 파싱 성공: {result}")
+                return result
+            else:
+                print(f"❌ [API] 지급 구조 JSON 구조 없음, fallback 사용")
+                return self._get_default_payout_structure(peril)
+                
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"❌ [API] 지급 구조 LLM 호출 실패: {str(e)}")
             # Fallback: 기본 지급 구조
             return self._get_default_payout_structure(peril)
     
@@ -269,6 +446,26 @@ class PerilCanvasGenerator:
                 "multiplier": 10000.0,
                 "deductible": 0.0,
                 "rationale": "중심기압이 낮을수록 피해가 커지는 선형 관계"
+            },
+            "concert_cancellation": {
+                "curve_type": "step",
+                "threshold": 3.0,
+                "operator": ">=",
+                "base_amount": 5000.0,
+                "max_payout": 500000.0,
+                "multiplier": 5000.0,
+                "deductible": 0.0,
+                "rationale": "콘서트 취소 심각도에 따른 단계적 지급"
+            },
+            "event_cancellation": {
+                "curve_type": "step",
+                "threshold": 2.0,
+                "operator": ">=",
+                "base_amount": 3000.0,
+                "max_payout": 300000.0,
+                "multiplier": 3000.0,
+                "deductible": 0.0,
+                "rationale": "이벤트 취소 심각도에 따른 단계적 지급"
             },
             "flight_delay": {
                 "curve_type": "step",

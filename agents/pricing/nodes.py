@@ -27,6 +27,8 @@ async def peril_canvas_node(state: AgentState) -> Dict[str, Any]:
         업데이트된 상태 (peril_canvas 포함)
     """
     
+    print("🎯 [NODE] peril_canvas_node 시작")
+    
     # 사용자 입력 추출
     if not state.get("messages"):
         return {
@@ -41,8 +43,11 @@ async def peril_canvas_node(state: AgentState) -> Dict[str, Any]:
     
     try:
         # Peril Canvas 생성
+        print(f"🔧 [NODE] PerilCanvasGenerator 생성 중...")
         generator = PerilCanvasGenerator()
+        print(f"🔧 [NODE] Canvas 생성 시작: {user_input}")
         canvas = await generator.generate_canvas_from_input(user_input)
+        print(f"🔧 [NODE] Canvas 생성 완료: {type(canvas)}")
         
         # Canvas 검증
         is_valid, validation_errors = await generator.validate_canvas(canvas)
@@ -65,6 +70,7 @@ async def peril_canvas_node(state: AgentState) -> Dict[str, Any]:
             ]
         })
         
+        print(f"🎯 [NODE] peril_canvas_node 완료: {canvas.peril}")
         return updated_state
         
     except Exception as e:
@@ -89,6 +95,8 @@ async def prior_extraction_node(state: AgentState) -> Dict[str, Any]:
     Returns:
         업데이트된 상태 (frequency_prior, severity_prior 포함)
     """
+    
+    print("📊 [NODE] prior_extraction_node 시작")
     
     # Peril Canvas 확인
     canvas_data = state.get("peril_canvas")
@@ -118,10 +126,15 @@ async def prior_extraction_node(state: AgentState) -> Dict[str, Any]:
             ]
         })
         
+        print(f"📊 [NODE] prior_extraction_node 완료: {frequency_prior.distribution}, {severity_prior.distribution}")
         return updated_state
         
     except Exception as e:
         error_msg = f"Prior 추출 중 오류: {str(e)}"
+        print(f"❌ [NODE] prior_extraction_node 에러: {error_msg}")
+        import traceback
+        traceback.print_exc()
+        
         updated_state = dict(state)
         updated_state.update({
             "result": {"error": error_msg},
