@@ -36,12 +36,13 @@ app_state: Dict[str, Any] = {
 
 
 # FastAPI 애플리케이션 생성 (단순화)
+# Cloud Run에서도 docs 사용 가능하도록 항상 활성화
 app = FastAPI(
     title=settings.title,
     description=settings.description,
     version=settings.version,
-    docs_url="/docs" if getattr(settings, 'debug', True) else None,
-    redoc_url="/redoc" if getattr(settings, 'debug', True) else None,
+    docs_url="/docs",  # 항상 활성화
+    redoc_url="/redoc",  # 항상 활성화
 )
 
 # CORS 미들웨어 (단순화)

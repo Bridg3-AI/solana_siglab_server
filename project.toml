@@ -1,9 +1,0 @@
-[build]
-# Docker buildpack 강제 사용
-builder = "gcr.io/buildpacks/builder:v1"
-
-[[build.buildpacks]]
-uri = "docker://docker"
-
-[build.env]
-GOOGLE_BUILDABLE = "Dockerfile"

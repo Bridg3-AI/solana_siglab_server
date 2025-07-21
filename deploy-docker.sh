@@ -16,4 +16,10 @@ gcloud run deploy solana-siglab-server \
   --cpu 2 \
   --timeout 900s
 
+# 모든 트래픽을 새 revision으로 즉시 라우팅
+echo "🚦 트래픽을 새 revision으로 라우팅..."
+gcloud run services update-traffic solana-siglab-server \
+  --to-latest \
+  --region asia-northeast3
+
 echo "✅ Deployed using Docker image (not buildpacks)"
