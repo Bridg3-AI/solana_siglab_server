@@ -12,7 +12,8 @@ LABEL version="1.0.0"
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PYTHONHASHSEED=random
 
 WORKDIR /app
 
@@ -51,6 +52,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:8080/api/v1/health || exit 1
 
 # ── 실행 엔트리포인트 ─────────────
-CMD ["gunicorn", "--bind", ":8080", "--workers", "1", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", "--timeout", "0", \
-     "main:app"]
+# Cloud Run에서 더 안정적인 실행을 위해 uvicorn 직접 사용
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
