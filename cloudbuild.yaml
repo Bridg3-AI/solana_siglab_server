@@ -1,0 +1,53 @@
+steps:
+  # Docker 이미지 빌드 (Dockerfile 사용)
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/solana-siglab-server:latest'
+      - '.'
+    id: 'docker-build'
+
+  # Container Registry에 이미지 푸시
+  - name: 'gcr.io/cloud-builders/docker' 
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/solana-siglab-server:latest'
+    id: 'docker-push'
+    waitFor: ['docker-build']
+
+  # Cloud Run에 배포
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'solana-siglab-server'
+      - '--image=gcr.io/$PROJECT_ID/solana-siglab-server:latest'
+      - '--region=asia-northeast3'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=2Gi'
+      - '--cpu=2'
+      - '--timeout=900s'
+      - '--port=8080'
+    id: 'deploy'
+    waitFor: ['docker-push']
+
+# 이미지 결과물 저장
+images:
+  - 'gcr.io/$PROJECT_ID/solana-siglab-server:latest'
+
+# 빌드 옵션
+options:
+  # 빌드 성능 향상
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: 100
+  
+  # 로깅
+  logging: CLOUD_LOGGING_ONLY
+
+# 대체 변수
+substitutions:
+  _REGION: 'asia-northeast3'
+  _SERVICE_NAME: 'solana-siglab-server'

@@ -1,0 +1,46 @@
+# Git 관련
+.git
+.gitignore
+
+# 개발 환경
+.env*
+venv/
+env/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 문서 및 테스트
+*.md
+docs/
+tests/
+scripts/
+
+# 빌드 아티팩트
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Node.js (Firebase 관련)
+node_modules/
+package-lock.json
+
+# 로그 및 결과
+*.log
+results/
+api_logs/
+api_results/
+api_notifications/
+
+# OS 관련  
+.DS_Store
+Thumbs.db
+
+# 기타
+tmp/
+temp/
