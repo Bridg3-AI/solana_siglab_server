@@ -1,0 +1,41 @@
+# =============================================================================
+# LLM-Lite Underwriter API Dependencies
+# =============================================================================
+
+# Core API Framework
+fastapi>=0.104.0,<0.105.0
+uvicorn[standard]>=0.24.0,<0.25.0
+pydantic[email]>=2.5.0,<3.0.0
+python-multipart>=0.0.6
+
+# HTTP Client (for webhooks)
+httpx>=0.25.0,<0.26.0
+
+# Async Redis (optional - for distributed task management)
+redis[hiredis]>=5.0.0,<6.0.0
+
+# Background Tasks & Scheduling
+celery>=5.3.0,<6.0.0
+flower>=2.0.1  # Celery monitoring (optional)
+
+# Monitoring & Metrics
+psutil>=5.9.6  # System metrics
+prometheus-client>=0.19.0  # Metrics export (optional)
+
+# Security
+python-jose[cryptography]>=3.3.0  # JWT tokens (if needed)
+passlib[bcrypt]>=1.7.4  # Password hashing (if needed)
+
+# Development Tools
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.12.0
+httpx>=0.25.0  # For test client
+black>=23.10.0  # Code formatting
+isort>=5.12.0  # Import sorting
+flake8>=6.1.0  # Linting
+
+# =============================================================================
+# Note: Core dependencies (numpy, pandas, langchain, etc.) are already
+# defined in src/requirements.txt and will be inherited
+# =============================================================================

@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from agents.core.config import load_env_file, get_config
 load_env_file()
 
-from agents.pricing_insurance_agent import PricingInsuranceAgent
+from agents.underwriter_agent import UnderwriterAgent
 
 
 async def main():
@@ -45,12 +45,12 @@ async def main():
     
     try:
         # Create agent with options
-        agent = PricingInsuranceAgent(
+        agent = UnderwriterAgent(
             simulation_years=options.get("years", 1000),
             enable_audit_trail=not options.get("no_audit", False)
         )
         
-        print(f"🚀 LLM-Lite Parametric Pricing 시작")
+        print(f"🚀 LLM-Lite Parametric Underwriting 시작")
         print(f"입력: {user_input}")
         print(f"시뮬레이션: {options.get('years', 1000):,}년")
         print("=" * 60)
@@ -105,7 +105,7 @@ def parse_options(args: list) -> Dict[str, Any]:
     return options
 
 
-async def run_normal_mode(agent: PricingInsuranceAgent, user_input: str) -> Dict[str, Any]:
+async def run_normal_mode(agent: UnderwriterAgent, user_input: str) -> Dict[str, Any]:
     """일반 모드 실행"""
     
     print("⏳ LLM-Lite Pricing 파이프라인 실행 중...")
@@ -145,7 +145,7 @@ async def run_normal_mode(agent: PricingInsuranceAgent, user_input: str) -> Dict
     return result
 
 
-async def run_debug_mode(agent: PricingInsuranceAgent, user_input: str) -> Dict[str, Any]:
+async def run_debug_mode(agent: UnderwriterAgent, user_input: str) -> Dict[str, Any]:
     """디버그 모드 실행 (단계별)"""
     
     print("🔍 디버그 모드: 단계별 실행")

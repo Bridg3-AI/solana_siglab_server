@@ -1,0 +1,12 @@
+{
+  "process_id": "unknown",
+  "user_input": "게임 서버 다운타임 보험",
+  "execution_mode": "step_by_step",
+  "timestamp": "2025-07-20T09:41:01.308303",
+  "result_summary": {
+    "status": "success",
+    "expected_loss": 361.1926569434275,
+    "gross_premium": 4452.311989626336,
+    "risk_level": "very_high"
+  }
+}

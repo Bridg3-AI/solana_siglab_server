@@ -1,0 +1,315 @@
+{
+  "name": "Crypto Insurance Template",
+  "description": "Parametric cryptocurrency volatility and price insurance contract template",
+  "version": "1.0.0",
+  "template_type": "crypto_insurance",
+  "parameters": {
+    "crypto_symbol": {
+      "type": "string",
+      "description": "Cryptocurrency symbol (e.g., BTC, ETH, SOL)",
+      "required": true,
+      "validation": {
+        "pattern": "^[A-Z]{2,10}$",
+        "min_length": 2,
+        "max_length": 10
+      }
+    },
+    "insurance_type": {
+      "type": "enum",
+      "description": "Type of crypto insurance",
+      "required": true,
+      "options": [
+        "price_drop",
+        "volatility_spike",
+        "de_pegging",
+        "liquidity_crisis"
+      ]
+    },
+    "trigger_threshold": {
+      "type": "float",
+      "description": "Threshold value that triggers payout",
+      "required": true,
+      "validation": {
+        "min": 0.01,
+        "max": 1.0
+      }
+    },
+    "reference_price": {
+      "type": "float",
+      "description": "Reference price for price drop insurance",
+      "required": false,
+      "validation": {
+        "min": 0.01,
+        "max": 1000000
+      }
+    },
+    "coverage_amount": {
+      "type": "float",
+      "description": "Coverage amount in USD",
+      "required": true,
+      "validation": {
+        "min": 100,
+        "max": 1000000
+      }
+    },
+    "premium_rate": {
+      "type": "float",
+      "description": "Premium rate as percentage of coverage",
+      "required": true,
+      "validation": {
+        "min": 0.01,
+        "max": 0.50
+      }
+    },
+    "duration_days": {
+      "type": "integer",
+      "description": "Policy duration in days",
+      "required": true,
+      "validation": {
+        "min": 1,
+        "max": 365
+      }
+    },
+    "observation_period": {
+      "type": "integer",
+      "description": "Observation period in hours for volatility calculation",
+      "required": false,
+      "default": 24,
+      "validation": {
+        "min": 1,
+        "max": 168
+      }
+    },
+    "oracle_source": {
+      "type": "enum",
+      "description": "Price oracle source",
+      "required": false,
+      "default": "pyth",
+      "options": [
+        "pyth",
+        "chainlink",
+        "switchboard",
+        "coingecko"
+      ]
+    }
+  },
+  "trigger_conditions": {
+    "price_drop": {
+      "data_source": "price_oracle",
+      "threshold_unit": "percentage",
+      "threshold_description": "Price drop percentage from reference price",
+      "typical_range": [0.05, 0.50],
+      "calculation": "(reference_price - current_price) / reference_price >= threshold"
+    },
+    "volatility_spike": {
+      "data_source": "price_oracle",
+      "threshold_unit": "volatility_percentage",
+      "threshold_description": "Volatility spike percentage over observation period",
+      "typical_range": [0.10, 1.00],
+      "calculation": "standard_deviation(price_changes) / average_price >= threshold"
+    },
+    "de_pegging": {
+      "data_source": "price_oracle",
+      "threshold_unit": "percentage",
+      "threshold_description": "Deviation from peg price (for stablecoins)",
+      "typical_range": [0.01, 0.10],
+      "calculation": "abs(current_price - peg_price) / peg_price >= threshold"
+    },
+    "liquidity_crisis": {
+      "data_source": "dex_oracle",
+      "threshold_unit": "percentage",
+      "threshold_description": "Liquidity drop percentage",
+      "typical_range": [0.20, 0.80],
+      "calculation": "(normal_liquidity - current_liquidity) / normal_liquidity >= threshold"
+    }
+  },
+  "risk_factors": {
+    "market_risk": {
+      "description": "General market risk factors",
+      "factors": [
+        "market_capitalization",
+        "trading_volume",
+        "market_sentiment",
+        "correlation_with_bitcoin"
+      ]
+    },
+    "token_risk": {
+      "description": "Token-specific risk factors",
+      "factors": [
+        "token_supply",
+        "token_distribution",
+        "governance_model",
+        "use_case_strength"
+      ]
+    },
+    "technical_risk": {
+      "description": "Technical risk factors",
+      "factors": [
+        "blockchain_stability",
+        "smart_contract_security",
+        "upgrade_mechanisms",
+        "developer_activity"
+      ]
+    },
+    "regulatory_risk": {
+      "description": "Regulatory risk factors",
+      "factors": [
+        "regulatory_clarity",
+        "compliance_status",
+        "legal_framework",
+        "jurisdiction_risk"
+      ]
+    }
+  },
+  "pricing_model": {
+    "base_premium": {
+      "calculation": "coverage_amount * premium_rate",
+      "description": "Base premium calculation"
+    },
+    "risk_multipliers": {
+      "high_volatility_crypto": 2.0,
+      "medium_volatility_crypto": 1.5,
+      "low_volatility_crypto": 1.0,
+      "stablecoin": 0.5,
+      "major_crypto": 1.0,
+      "altcoin": 1.3,
+      "defi_token": 1.8,
+      "meme_coin": 3.0,
+      "bear_market": 1.4,
+      "bull_market": 1.2,
+      "high_correlation": 1.2,
+      "low_correlation": 0.9
+    },
+    "minimum_premium": 25,
+    "maximum_premium": 100000
+  },
+  "payout_structure": {
+    "trigger_mechanism": "automatic",
+    "payout_delay_hours": 2,
+    "verification_required": true,
+    "partial_payout_supported": true,
+    "payout_currency": "USDC",
+    "payout_tiers": {
+      "threshold_to_1.5x": 0.50,
+      "1.5x_to_2x": 0.75,
+      "2x_and_above": 1.0
+    }
+  },
+  "data_sources": {
+    "primary": {
+      "price_oracle": {
+        "provider": "Pyth Network",
+        "update_frequency": "real-time",
+        "reliability": 0.98
+      }
+    },
+    "backup": {
+      "price_oracle": {
+        "provider": "Chainlink",
+        "update_frequency": "real-time",
+        "reliability": 0.96
+      }
+    },
+    "reference": {
+      "market_data": {
+        "provider": "CoinGecko",
+        "update_frequency": "5_minutes",
+        "reliability": 0.95
+      }
+    }
+  },
+  "supported_tokens": {
+    "major_cryptocurrencies": [
+      "BTC",
+      "ETH",
+      "SOL",
+      "ADA",
+      "DOT",
+      "AVAX",
+      "NEAR",
+      "LUNA"
+    ],
+    "stablecoins": [
+      "USDC",
+      "USDT",
+      "BUSD",
+      "DAI",
+      "FRAX",
+      "UST"
+    ],
+    "defi_tokens": [
+      "UNI",
+      "AAVE",
+      "COMP",
+      "SUSHI",
+      "CRV",
+      "BAL"
+    ],
+    "solana_ecosystem": [
+      "SOL",
+      "RAY",
+      "SRM",
+      "COPE",
+      "FIDA",
+      "MEDIA"
+    ]
+  },
+  "contract_features": {
+    "automatic_renewal": false,
+    "partial_claims": true,
+    "multi_token_coverage": false,
+    "cancellation_allowed": true,
+    "refund_on_cancellation": true,
+    "upgrade_coverage": true,
+    "dynamic_threshold": false
+  },
+  "coverage_exclusions": {
+    "excluded_events": [
+      "exchange_hacks",
+      "regulatory_bans",
+      "hard_forks",
+      "network_attacks",
+      "smart_contract_exploits"
+    ],
+    "excluded_tokens": [
+      "privacy_coins",
+      "sanctioned_tokens",
+      "rugpull_tokens"
+    ],
+    "excluded_scenarios": [
+      "flash_loan_attacks",
+      "governance_attacks",
+      "oracle_manipulation"
+    ]
+  },
+  "oracle_configuration": {
+    "price_feeds": {
+      "update_frequency": "real-time",
+      "staleness_threshold": 300,
+      "deviation_threshold": 0.01,
+      "heartbeat": 60
+    },
+    "aggregation": {
+      "method": "median",
+      "minimum_sources": 3,
+      "outlier_detection": true,
+      "confidence_threshold": 0.95
+    }
+  },
+  "compliance": {
+    "regulatory_requirements": [
+      "crypto_insurance_license",
+      "data_privacy",
+      "consumer_protection",
+      "aml_kyc"
+    ],
+    "supported_jurisdictions": [
+      "US",
+      "EU",
+      "SG",
+      "CH",
+      "JP",
+      "KR"
+    ]
+  }
+}

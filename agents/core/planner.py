@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from .state import AgentState
 from .config import get_config
+from .logging import get_logger, log_node_start, log_node_success, log_node_error, log_llm_call
 
 
 # LLM 인스턴스 (지연 초기화)
@@ -57,9 +58,14 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
     Returns:
         Updated state with generated plan
     """
+    logger = get_logger("planner_node")
+    log_node_start(logger, "planner_node")
+    
     # 최신 사용자 메시지 추출
     if not state.get("messages"):
-        return {"plan": "사용자 메시지가 없습니다."}
+        error_msg = "사용자 메시지가 없습니다."
+        log_node_error(logger, "planner_node", error_msg)
+        return {**state, "plan": error_msg}
     
     # 마지막 메시지에서 사용자 입력 추출
     last_message = state["messages"][-1]
@@ -67,6 +73,7 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
     
     # 이벤트 타입 추출 (간단한 키워드 매칭)
     event_type = extract_event_type(user_input)
+    logger.info("event_type_extracted", event_type=event_type, user_input_length=len(user_input))
     
     try:
         # LLM 호출하여 계획 생성
@@ -75,16 +82,24 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
         response = await llm.ainvoke(messages)
         plan = response.content
         
-        # 기존 상태 유지하면서 업데이트
-        updated_state = dict(state)
-        updated_state.update({
+        # LLM 호출 로깅
+        log_llm_call(logger, "gpt-4", len(str(messages)), len(plan))
+        
+        # 상태 불변성 준수: 명시적 복사 패턴 사용
+        updated_state = {
+            **state,
             "plan": plan,
             "event_type": event_type,
             "messages": state["messages"] + [{"role": "assistant", "content": f"계획 생성됨: {plan[:100]}..."}]
-        })
+        }
+        
+        log_node_success(logger, "planner_node", plan_length=len(plan), event_type=event_type)
         return updated_state
         
     except Exception as e:
+        error_msg = f"LLM 호출 중 오류: {str(e)}"
+        log_node_error(logger, "planner_node", error_msg, exception=str(e))
+        
         # Mock plan for testing when LLM fails
         mock_plan = f"""
 1. 이벤트 타입: {event_type}
@@ -94,13 +109,15 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
 5. 위험 평가: 과거 통계 데이터 기반 손해율 계산
 """
         
-        # 기존 상태 유지하면서 업데이트
-        updated_state = dict(state)
-        updated_state.update({
+        # 상태 불변성 준수: 명시적 복사 패턴 사용
+        updated_state = {
+            **state,
             "plan": mock_plan,
             "event_type": event_type,
             "messages": state["messages"] + [{"role": "assistant", "content": f"Mock 계획 생성됨 (LLM 오류로 인한 대체)"}]
-        })
+        }
+        
+        logger.warning("fallback_plan_used", event_type=event_type, error=error_msg)
         return updated_state
 
 

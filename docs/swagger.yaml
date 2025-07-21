@@ -1,0 +1,1092 @@
+openapi: 3.0.3
+info:
+  title: LLM-Lite Underwriter API
+  description: |
+    파라메트릭 보험 자동 인수심사 API 시스템
+    
+    ## 주요 기능
+    - 자연어 입력을 통한 보험상품 설계
+    - 비동기 작업 처리 및 실시간 진행률 추적
+    - Webhook/파일/메시지큐를 통한 결과 전송
+    - 배치 처리 지원
+    
+    ## 사용 흐름
+    1. `/underwrite` 엔드포인트로 인수심사 요청 제출
+    2. 반환된 `task_id`로 `/tasks/{task_id}` 엔드포인트에서 진행상황 확인
+    3. 처리 완료 시 설정된 콜백 방식으로 결과 수신
+    
+  version: 1.0.0
+  contact:
+    name: LLM-Lite Development Team
+    email: support@llm-lite.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: 개발 서버
+  - url: https://api.llm-lite.com/v1
+    description: 프로덕션 서버
+
+tags:
+  - name: Health Check
+    description: 서버 상태 확인
+  - name: Underwriter
+    description: 인수심사 관련 API
+  - name: Tasks
+    description: 작업 상태 관리 API
+  - name: Notifications
+    description: 알림 및 콜백 시스템 API
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health Check
+      summary: 서버 헬스 체크
+      description: API 서버의 상태와 의존성 시스템 상태를 확인합니다.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: 서버가 정상 동작 중
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                timestamp: "2025-01-21T14:30:52.123456Z"
+                version: "1.0.0"
+                dependencies:
+                  underwriter_agent: "available"
+                  task_manager: "running"
+                  notification_service: "available"
+        '503':
+          description: 서버 또는 의존성 시스템에 문제 있음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /underwrite:
+    post:
+      tags:
+        - Underwriter
+      summary: 인수심사 요청 제출
+      description: |
+        자연어로 작성된 보험상품 요구사항을 받아 비동기로 인수심사를 수행합니다.
+        
+        **처리 단계:**
+        1. Peril Canvas 생성 (위험 요소 분석)
+        2. Prior 데이터 추출 (과거 손실 데이터 분석)
+        3. 시나리오 생성 (몬테카를로 시뮬레이션)
+        4. 가격 계산 (보험료 산정)
+        5. 리포트 생성 (최종 인수심사 결과)
+        
+      operationId: submitUnderwriteRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnderwriteRequest'
+            examples:
+              typhoon_insurance:
+                summary: 태풍 농작물 보험 예시
+                value:
+                  request_id: "typhoon_001"
+                  user_input: "태풍으로 인한 농작물 손실에 대한 파라메트릭 보험상품을 설계해주세요. 풍속 40m/s 이상일 때 보험금이 지급되도록 하고, 보장 금액은 1억원으로 설정해주세요."
+                  callback:
+                    type: "webhook"
+                    webhook:
+                      url: "https://your-server.com/webhook/callback"
+                      headers:
+                        Authorization: "Bearer YOUR_TOKEN"
+                        Content-Type: "application/json"
+                  options:
+                    simulation_years: 1000
+                    market_risk_premium: 0.15
+                    debug_mode: false
+                    enable_audit_trail: true
+                  priority: "high"
+              earthquake_insurance:
+                summary: 지진 건물 보험 예시  
+                value:
+                  request_id: "earthquake_001"
+                  user_input: "규모 6.0 이상의 지진으로 인한 건물 손실 보험을 만들어주세요. 서울 강남구 소재 오피스빌딩을 대상으로 하고, 보장한도는 50억원입니다."
+                  callback:
+                    type: "file_system"
+                  options:
+                    simulation_years: 2000
+                    market_risk_premium: 0.20
+                    debug_mode: true
+                  priority: "normal"
+      responses:
+        '202':
+          description: 인수심사 요청이 성공적으로 접수됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+              example:
+                task_id: "underwriter_20250121_143052_a1b2c3d4"
+                request_id: "typhoon_001"
+                status: "accepted"
+                estimated_duration_seconds: 90
+                created_at: "2025-01-21T14:30:52.123456Z"
+                status_url: "/api/v1/tasks/underwriter_20250121_143052_a1b2c3d4"
+        '422':
+          description: 요청 데이터 검증 실패
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 서비스 사용 불가 (큐가 가득참)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /underwrite/batch:
+    post:
+      tags:
+        - Underwriter
+      summary: 배치 인수심사 요청
+      description: |
+        여러 개의 인수심사 요청을 한 번에 제출합니다.
+        각 요청은 독립적으로 처리되며 개별 task_id를 가집니다.
+      operationId: submitBatchUnderwriteRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchUnderwriteRequest'
+            example:
+              requests:
+                - request_id: "batch_001"
+                  user_input: "태풍 보험상품 설계"
+                  callback:
+                    type: "webhook"
+                    webhook:
+                      url: "https://api.example.com/callback"
+                  options:
+                    simulation_years: 1000
+                - request_id: "batch_002"
+                  user_input: "지진 보험상품 설계"
+                  callback:
+                    type: "file_system"
+                  options:
+                    simulation_years: 1500
+      responses:
+        '202':
+          description: 배치 요청이 성공적으로 접수됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchTaskResponse'
+        '422':
+          description: 요청 데이터 검증 실패
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /underwrite/stats:
+    get:
+      tags:
+        - Underwriter
+      summary: 인수심사 시스템 통계
+      description: 현재 처리 중인 작업, 큐 상태 등의 시스템 통계를 반환합니다.
+      operationId: getUnderwriterStats
+      responses:
+        '200':
+          description: 통계 정보 조회 성공
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  timestamp:
+                    type: string
+                    format: date-time
+                  system_status:
+                    type: string
+                    example: "operational"
+                  total_tasks:
+                    type: integer
+                    example: 156
+                  queue_size:
+                    type: integer
+                    example: 3
+                  max_concurrent:
+                    type: integer
+                    example: 10
+                  running_workers:
+                    type: integer
+                    example: 8
+                  status_counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    example:
+                      completed: 145
+                      processing: 8
+                      queued: 3
+                  avg_processing_time:
+                    type: number
+                    format: float
+                    example: 78.5
+
+  /tasks/{task_id}:
+    get:
+      tags:
+        - Tasks
+      summary: 작업 상태 조회
+      description: |
+        task_id에 해당하는 작업의 상세 상태, 진행률, 결과 등을 반환합니다.
+        
+        **상태 종류:**
+        - `accepted`: 요청 접수
+        - `queued`: 큐 대기 중
+        - `processing`: 처리 중
+        - `completed`: 완료
+        - `failed`: 실패
+        - `cancelled`: 취소됨
+        
+      operationId: getTaskStatus
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          description: 작업 고유 ID
+          schema:
+            type: string
+            minLength: 10
+            maxLength: 100
+          example: "underwriter_20250121_143052_a1b2c3d4"
+      responses:
+        '200':
+          description: 작업 상태 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskStatusResponse'
+              examples:
+                processing:
+                  summary: 처리 중인 작업
+                  value:
+                    task_id: "underwriter_20250121_143052_a1b2c3d4"
+                    request_id: "typhoon_001"
+                    status: "processing"
+                    priority: "high"
+                    created_at: "2025-01-21T14:30:52.123456Z"
+                    started_at: "2025-01-21T14:30:55.789012Z"
+                    processing_duration: 45.2
+                    progress:
+                      percentage: 65.0
+                      current_step: "pricing_calculation"
+                      completed_steps: ["peril_canvas", "prior_extraction", "scenario_generation"]
+                      total_steps: 5
+                    estimated_completion: "2025-01-21T14:32:10.123456Z"
+                completed:
+                  summary: 완료된 작업
+                  value:
+                    task_id: "underwriter_20250121_143052_a1b2c3d4"
+                    request_id: "typhoon_001"
+                    status: "completed"
+                    priority: "high"
+                    created_at: "2025-01-21T14:30:52.123456Z"
+                    started_at: "2025-01-21T14:30:55.789012Z"
+                    completed_at: "2025-01-21T14:32:15.654321Z"
+                    processing_duration: 83.5
+                    progress:
+                      percentage: 100.0
+                      current_step: "completed"
+                      completed_steps: ["peril_canvas", "prior_extraction", "scenario_generation", "pricing_calculation", "pricing_report"]
+                      total_steps: 5
+                    result:
+                      status: "success"
+                      expected_loss: 15000000
+                      gross_premium: 18750000
+                      risk_level: "medium"
+                      loss_ratio: 0.8
+                      coefficient_of_variation: 1.25
+                      var_99: 85000000
+                      tvar_99: 92000000
+                      simulation_years: 1000
+                      validation_passed: true
+                      event_type: "태풍"
+                      recommendation: "추천: 보험료 조정 후 인수 가능"
+                    callback_status: "success"
+        '404':
+          description: 작업을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 서버 내부 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Tasks
+      summary: 작업 취소
+      description: |
+        처리 중이거나 대기 중인 작업을 취소합니다.
+        이미 완료되었거나 실패한 작업은 취소할 수 없습니다.
+      operationId: cancelTask
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          description: 작업 고유 ID
+          schema:
+            type: string
+            minLength: 10
+            maxLength: 100
+      responses:
+        '204':
+          description: 작업 취소 성공
+        '404':
+          description: 작업을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 취소할 수 없는 상태 (이미 완료/실패)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /tasks:
+    get:
+      tags:
+        - Tasks
+      summary: 작업 목록 조회
+      description: |
+        시스템의 작업들을 조회합니다. 상태별 필터링과 페이징을 지원합니다.
+      operationId: listTasks
+      parameters:
+        - name: status_filter
+          in: query
+          description: 상태별 필터
+          schema:
+            $ref: '#/components/schemas/TaskStatus'
+        - name: limit
+          in: query
+          description: 반환할 작업 수 제한
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+        - name: include_completed
+          in: query
+          description: 완료된 작업 포함 여부
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: 작업 목록 조회 성공
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaskSummary'
+                  total_count:
+                    type: integer
+                  filters:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        nullable: true
+                      limit:
+                        type: integer
+                      include_completed:
+                        type: boolean
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /tasks/{task_id}/retry:
+    post:
+      tags:
+        - Tasks
+      summary: 실패한 작업 재시도
+      description: |
+        실패한 작업을 다시 큐에 추가하여 재처리합니다.
+        새로운 task_id가 생성됩니다.
+      operationId: retryFailedTask
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          description: 실패한 작업의 ID
+          schema:
+            type: string
+            minLength: 10
+            maxLength: 100
+      responses:
+        '202':
+          description: 재시도 요청 접수 성공
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Task retry submitted successfully"
+                  original_task_id:
+                    type: string
+                    example: "underwriter_20250121_143052_a1b2c3d4"
+                  new_task_id:
+                    type: string
+                    example: "underwriter_20250121_144052_b2c3d4e5"
+                  status_url:
+                    type: string
+                    example: "/api/v1/tasks/underwriter_20250121_144052_b2c3d4e5"
+                  timestamp:
+                    type: string
+                    format: date-time
+        '404':
+          description: 작업을 찾을 수 없음
+        '409':
+          description: 재시도할 수 없는 상태 (실패 상태가 아님)
+
+  /notifications/test-webhook:
+    post:
+      tags:
+        - Notifications
+      summary: Webhook 연결 테스트
+      description: |
+        제공된 webhook 설정으로 테스트 메시지를 전송하여 연결을 확인합니다.
+      operationId: testWebhookConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookConfig'
+            example:
+              url: "https://httpbin.org/post"
+              headers:
+                Content-Type: "application/json"
+                Authorization: "Bearer test-token"
+              auth_header: null
+              auth_token: null
+      responses:
+        '200':
+          description: 테스트 완료
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Webhook connection test completed"
+                  test_result:
+                    type: object
+                    properties:
+                      webhook_url:
+                        type: string
+                        format: uri
+                      test_result:
+                        type: object
+                        properties:
+                          success:
+                            type: boolean
+                          status_code:
+                            type: integer
+                          response_headers:
+                            type: object
+                          response_body:
+                            type: object
+                          attempt:
+                            type: integer
+                          timestamp:
+                            type: string
+                            format: date-time
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /notifications/stats:
+    get:
+      tags:
+        - Notifications
+      summary: 알림 통계 조회
+      description: |
+        알림 전송 관련 통계 정보를 반환합니다.
+      operationId: getNotificationStats
+      responses:
+        '200':
+          description: 알림 통계 조회 성공
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  timestamp:
+                    type: string
+                    format: date-time
+                  notification_stats:
+                    type: object
+                    properties:
+                      total_tasks_with_callbacks:
+                        type: integer
+                        example: 45
+                      callback_success_count:
+                        type: integer
+                        example: 42
+                      callback_failed_count:
+                        type: integer
+                        example: 2
+                      callback_pending_count:
+                        type: integer
+                        example: 1
+                      callback_in_progress_count:
+                        type: integer
+                        example: 0
+                      avg_callback_attempts:
+                        type: number
+                        format: float
+                        example: 1.15
+                  system_config:
+                    type: object
+                    properties:
+                      webhook_timeout_seconds:
+                        type: integer
+                        example: 30
+                      webhook_max_retries:
+                        type: integer
+                        example: 3
+                      file_output_directory:
+                        type: string
+                        example: "./api_notifications"
+
+components:
+  schemas:
+    # 요청 모델
+    UnderwriteRequest:
+      type: object
+      required:
+        - request_id
+        - user_input
+        - callback
+      properties:
+        request_id:
+          type: string
+          description: 클라이언트가 제공하는 고유 요청 ID
+          minLength: 1
+          maxLength: 100
+          example: "typhoon_001"
+        user_input:
+          type: string
+          description: 자연어로 작성된 보험상품 요구사항
+          minLength: 5
+          maxLength: 2000
+          example: "태풍으로 인한 농작물 손실에 대한 파라메트릭 보험상품을 설계해주세요. 풍속 40m/s 이상일 때 보험금이 지급되도록 하고, 보장 금액은 1억원으로 설정해주세요."
+        callback:
+          $ref: '#/components/schemas/CallbackConfig'
+        options:
+          $ref: '#/components/schemas/UnderwriteOptions'
+        priority:
+          $ref: '#/components/schemas/TaskPriority'
+
+    BatchUnderwriteRequest:
+      type: object
+      required:
+        - requests
+      properties:
+        requests:
+          type: array
+          description: 인수심사 요청 목록
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/UnderwriteRequest'
+
+    UnderwriteOptions:
+      type: object
+      properties:
+        simulation_years:
+          type: integer
+          description: 몬테카를로 시뮬레이션 연수
+          minimum: 10
+          maximum: 50000
+          default: 1000
+          example: 1000
+        market_risk_premium:
+          type: number
+          format: float
+          description: 시장 위험 프리미엄 비율
+          minimum: 0.0
+          maximum: 2.0
+          default: 0.15
+          example: 0.15
+        debug_mode:
+          type: boolean
+          description: 디버그 모드 (단계별 상세 진행률 제공)
+          default: false
+        enable_audit_trail:
+          type: boolean
+          description: 감사 추적 활성화
+          default: true
+
+    CallbackConfig:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          $ref: '#/components/schemas/CallbackType'
+        webhook:
+          $ref: '#/components/schemas/WebhookConfig'
+
+    WebhookConfig:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Webhook 대상 URL
+          example: "https://your-server.com/webhook/callback"
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: HTTP 헤더
+          example:
+            Authorization: "Bearer YOUR_TOKEN"
+            Content-Type: "application/json"
+        auth_header:
+          type: string
+          description: 인증 헤더명
+          nullable: true
+          example: "Authorization"
+        auth_token:
+          type: string
+          description: 인증 토큰
+          nullable: true
+          example: "Bearer secret-token"
+
+    # 응답 모델
+    TaskResponse:
+      type: object
+      properties:
+        task_id:
+          type: string
+          description: 생성된 작업 ID
+          example: "underwriter_20250121_143052_a1b2c3d4"
+        request_id:
+          type: string
+          description: 클라이언트 요청 ID
+          example: "typhoon_001"
+        status:
+          type: string
+          description: 작업 상태
+          example: "accepted"
+        estimated_duration_seconds:
+          type: integer
+          description: 예상 처리 시간 (초)
+          example: 90
+        created_at:
+          type: string
+          format: date-time
+          description: 작업 생성 시간
+        status_url:
+          type: string
+          description: 작업 상태 조회 URL
+          example: "/api/v1/tasks/underwriter_20250121_143052_a1b2c3d4"
+
+    BatchTaskResponse:
+      type: object
+      properties:
+        batch_id:
+          type: string
+          description: 배치 ID
+          example: "batch_20250121_143052_25"
+        total_tasks:
+          type: integer
+          description: 총 작업 수
+          example: 25
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskResponse'
+        created_at:
+          type: string
+          format: date-time
+
+    TaskStatusResponse:
+      type: object
+      properties:
+        task_id:
+          type: string
+          example: "underwriter_20250121_143052_a1b2c3d4"
+        request_id:
+          type: string
+          example: "typhoon_001"
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        priority:
+          $ref: '#/components/schemas/TaskPriority'
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        processing_duration:
+          type: number
+          format: float
+          description: 처리 소요 시간 (초)
+          nullable: true
+          example: 83.5
+        progress:
+          $ref: '#/components/schemas/TaskProgress'
+        estimated_completion:
+          type: string
+          format: date-time
+          nullable: true
+        result:
+          $ref: '#/components/schemas/UnderwriteResult'
+        error:
+          type: string
+          nullable: true
+        callback_status:
+          $ref: '#/components/schemas/CallbackStatus'
+        callback_attempts:
+          type: integer
+          default: 0
+        last_callback_attempt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TaskSummary:
+      type: object
+      properties:
+        task_id:
+          type: string
+        request_id:
+          type: string
+        status:
+          type: string
+        priority:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        processing_duration:
+          type: number
+          format: float
+          nullable: true
+        progress_percentage:
+          type: number
+          format: float
+        current_step:
+          type: string
+          nullable: true
+        callback_status:
+          type: string
+        has_result:
+          type: boolean
+        has_error:
+          type: boolean
+
+    TaskProgress:
+      type: object
+      properties:
+        percentage:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 100.0
+          description: 진행률 백분율
+          example: 65.0
+        current_step:
+          type: string
+          description: 현재 처리 단계
+          nullable: true
+          example: "pricing_calculation"
+        completed_steps:
+          type: array
+          items:
+            type: string
+          description: 완료된 단계들
+          example: ["peril_canvas", "prior_extraction", "scenario_generation"]
+        total_steps:
+          type: integer
+          description: 전체 단계 수
+          default: 5
+          example: 5
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProcessingStep'
+
+    ProcessingStep:
+      type: object
+      properties:
+        name:
+          type: string
+          description: 단계명
+          example: "peril_canvas"
+        status:
+          type: string
+          description: 단계 상태
+          enum: ["pending", "processing", "completed", "failed"]
+          example: "completed"
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    UnderwriteResult:
+      type: object
+      properties:
+        status:
+          type: string
+          description: 처리 결과 상태
+          enum: ["success", "error"]
+          example: "success"
+        expected_loss:
+          type: number
+          description: 기대 손실액 (원)
+          nullable: true
+          example: 15000000
+        gross_premium:
+          type: number
+          description: 총 보험료 (원)
+          nullable: true
+          example: 18750000
+        risk_level:
+          type: string
+          description: 리스크 레벨
+          enum: ["low", "medium", "high", "very_high"]
+          nullable: true
+          example: "medium"
+        loss_ratio:
+          type: number
+          format: float
+          description: 손해율
+          nullable: true
+          example: 0.8
+        coefficient_of_variation:
+          type: number
+          format: float
+          description: 변동계수
+          nullable: true
+          example: 1.25
+        var_99:
+          type: number
+          description: 99% VaR (Value at Risk)
+          nullable: true
+          example: 85000000
+        tvar_99:
+          type: number
+          description: 99% TVaR (Tail Value at Risk)
+          nullable: true
+          example: 92000000
+        simulation_years:
+          type: integer
+          description: 시뮬레이션 연수
+          example: 1000
+        validation_passed:
+          type: boolean
+          description: 검증 통과 여부
+          default: false
+        validation_checks:
+          type: array
+          items:
+            type: string
+          description: 검증 항목들
+          nullable: true
+        alerts:
+          type: array
+          items:
+            type: string
+          description: 경고 메시지들
+          nullable: true
+        event_type:
+          type: string
+          description: 위험 사건 유형
+          nullable: true
+          example: "태풍"
+        recommendation:
+          type: string
+          description: 인수심사 권고사항
+          nullable: true
+          example: "추천: 보험료 조정 후 인수 가능"
+        executive_summary:
+          type: string
+          description: 경영진 요약
+          nullable: true
+        audit_trail:
+          type: array
+          items:
+            type: object
+          description: 감사 추적 정보
+          nullable: true
+        error:
+          type: string
+          description: 에러 메시지 (실패 시)
+          nullable: true
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: ["healthy", "degraded", "unhealthy"]
+          example: "healthy"
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          example: "1.0.0"
+        dependencies:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            underwriter_agent: "available"
+            task_manager: "running"
+            notification_service: "available"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error_code:
+          type: string
+          description: 에러 코드
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          description: 에러 메시지
+          example: "Request validation failed"
+        details:
+          type: object
+          description: 상세 에러 정보
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+        request_id:
+          type: string
+          nullable: true
+
+    # 열거형 타입들
+    TaskStatus:
+      type: string
+      enum:
+        - accepted
+        - queued
+        - processing
+        - completed
+        - failed
+        - cancelled
+      description: |
+        작업 상태:
+        - `accepted`: 요청 접수
+        - `queued`: 큐 대기 중
+        - `processing`: 처리 중
+        - `completed`: 완료
+        - `failed`: 실패
+        - `cancelled`: 취소됨
+
+    TaskPriority:
+      type: string
+      enum:
+        - low
+        - normal
+        - high
+        - urgent
+      default: normal
+      description: |
+        작업 우선순위:
+        - `low`: 낮음
+        - `normal`: 보통
+        - `high`: 높음
+        - `urgent`: 긴급
+
+    CallbackType:
+      type: string
+      enum:
+        - webhook
+        - file_system
+        - message_queue
+      description: |
+        콜백 타입:
+        - `webhook`: HTTP Webhook
+        - `file_system`: 파일 시스템 출력
+        - `message_queue`: 메시지 큐 전송
+
+    CallbackStatus:
+      type: string
+      enum:
+        - pending
+        - in_progress
+        - success
+        - failed
+      description: |
+        콜백 상태:
+        - `pending`: 대기 중
+        - `in_progress`: 진행 중
+        - `success`: 성공
+        - `failed`: 실패
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API 키 인증 (선택사항, 환경에 따라 활성화)
+
+security:
+  - ApiKeyAuth: []
+  - {}  # 인증 없이도 접근 가능

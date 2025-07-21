@@ -14,6 +14,7 @@ from .monte_carlo_pricer import MonteCarloPricer
 from .pricing_reporter import PricingReporter
 from .models.base import PerilCanvas, FrequencyPrior, SeverityPrior, PricingResult
 from ..core.state import AgentState
+from ..core.logging import get_logger, log_node_start, log_node_success, log_node_error, log_state_transition
 
 
 async def peril_canvas_node(state: AgentState) -> Dict[str, Any]:
@@ -26,13 +27,16 @@ async def peril_canvas_node(state: AgentState) -> Dict[str, Any]:
     Returns:
         업데이트된 상태 (peril_canvas 포함)
     """
-    
-    print("🎯 [NODE] peril_canvas_node 시작")
+    logger = get_logger("peril_canvas_node")
+    log_node_start(logger, "peril_canvas_node")
     
     # 사용자 입력 추출
     if not state.get("messages"):
+        error_msg = "사용자 메시지가 없습니다."
+        log_node_error(logger, "peril_canvas_node", error_msg)
         return {
-            "result": {"error": "사용자 메시지가 없습니다."},
+            **state,
+            "result": {"error": error_msg},
             "messages": state.get("messages", []) + [
                 {"role": "assistant", "content": "사용자 입력이 필요합니다."}
             ]
@@ -42,46 +46,55 @@ async def peril_canvas_node(state: AgentState) -> Dict[str, Any]:
     user_input = last_message.get("content", "") if isinstance(last_message, dict) else str(last_message)
     
     try:
+        before_keys = set(state.keys())
+        
         # Peril Canvas 생성
-        print(f"🔧 [NODE] PerilCanvasGenerator 생성 중...")
+        logger.info("canvas_generation_started", user_input_length=len(user_input))
         generator = PerilCanvasGenerator()
-        print(f"🔧 [NODE] Canvas 생성 시작: {user_input}")
         canvas = await generator.generate_canvas_from_input(user_input)
-        print(f"🔧 [NODE] Canvas 생성 완료: {type(canvas)}")
+        logger.info("canvas_generation_completed", canvas_type=type(canvas).__name__)
         
         # Canvas 검증
         is_valid, validation_errors = await generator.validate_canvas(canvas)
         
         if not is_valid:
+            error_msg = f"Canvas 검증 실패: {', '.join(validation_errors)}"
+            log_node_error(logger, "peril_canvas_node", error_msg, validation_errors=validation_errors)
             return {
-                "result": {"error": f"Canvas 검증 실패: {', '.join(validation_errors)}"},
+                **state,
+                "result": {"error": error_msg},
                 "messages": state.get("messages", []) + [
                     {"role": "assistant", "content": f"Canvas 생성 실패: {validation_errors[0] if validation_errors else '알 수 없는 오류'}"}
                 ]
             }
         
-        # 상태 업데이트
-        updated_state = dict(state)
-        updated_state.update({
+        # 상태 불변성 준수: 명시적 복사 패턴 사용
+        updated_state = {
+            **state,
             "peril_canvas": canvas.dict(),
             "event_type": canvas.peril,
             "messages": state.get("messages", []) + [
                 {"role": "assistant", "content": f"Peril Canvas 생성 완료: {canvas.peril} ({canvas.region})"}
             ]
-        })
+        }
         
-        print(f"🎯 [NODE] peril_canvas_node 완료: {canvas.peril}")
+        after_keys = set(updated_state.keys())
+        log_state_transition(logger, "peril_canvas_node", before_keys, after_keys)
+        log_node_success(logger, "peril_canvas_node", canvas_peril=canvas.peril, canvas_region=canvas.region)
         return updated_state
         
     except Exception as e:
         error_msg = f"Peril Canvas 생성 중 오류: {str(e)}"
-        updated_state = dict(state)
-        updated_state.update({
+        log_node_error(logger, "peril_canvas_node", error_msg, exception=str(e))
+        
+        # 상태 불변성 준수: 명시적 복사 패턴 사용
+        updated_state = {
+            **state,
             "result": {"error": error_msg},
             "messages": state.get("messages", []) + [
                 {"role": "assistant", "content": error_msg}
             ]
-        })
+        }
         return updated_state
 
 
@@ -95,14 +108,17 @@ async def prior_extraction_node(state: AgentState) -> Dict[str, Any]:
     Returns:
         업데이트된 상태 (frequency_prior, severity_prior 포함)
     """
-    
-    print("📊 [NODE] prior_extraction_node 시작")
+    logger = get_logger("prior_extraction_node")
+    log_node_start(logger, "prior_extraction_node")
     
     # Peril Canvas 확인
     canvas_data = state.get("peril_canvas")
     if not canvas_data:
+        error_msg = "Peril Canvas가 없습니다."
+        log_node_error(logger, "prior_extraction_node", error_msg)
         return {
-            "result": {"error": "Peril Canvas가 없습니다."},
+            **state,
+            "result": {"error": error_msg},
             "messages": state.get("messages", []) + [
                 {"role": "assistant", "content": "Prior 추출을 위해 Peril Canvas가 필요합니다."}
             ]
@@ -116,32 +132,33 @@ async def prior_extraction_node(state: AgentState) -> Dict[str, Any]:
         extractor = PriorExtractor()
         frequency_prior, severity_prior = await extractor.extract_priors(canvas)
         
-        # 상태 업데이트
-        updated_state = dict(state)
-        updated_state.update({
+        # 상태 불변성 준수: 명시적 복사 패턴 사용
+        updated_state = {
+            **state,
             "frequency_prior": frequency_prior.dict(),
             "severity_prior": severity_prior.dict(),
             "messages": state.get("messages", []) + [
                 {"role": "assistant", "content": f"Prior 추출 완료: {frequency_prior.distribution} (빈도), {severity_prior.distribution} (심도)"}
             ]
-        })
+        }
         
-        print(f"📊 [NODE] prior_extraction_node 완료: {frequency_prior.distribution}, {severity_prior.distribution}")
+        log_node_success(logger, "prior_extraction_node", 
+                        frequency_dist=frequency_prior.distribution, 
+                        severity_dist=severity_prior.distribution)
         return updated_state
         
     except Exception as e:
         error_msg = f"Prior 추출 중 오류: {str(e)}"
-        print(f"❌ [NODE] prior_extraction_node 에러: {error_msg}")
-        import traceback
-        traceback.print_exc()
+        log_node_error(logger, "prior_extraction_node", error_msg, exception=str(e))
         
-        updated_state = dict(state)
-        updated_state.update({
+        # 상태 불변성 준수: 명시적 복사 패턴 사용
+        updated_state = {
+            **state,
             "result": {"error": error_msg},
             "messages": state.get("messages", []) + [
                 {"role": "assistant", "content": error_msg}
             ]
-        })
+        }
         return updated_state
 
 

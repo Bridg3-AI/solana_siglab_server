@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>LLM-Lite Underwriter API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui.css" />
+    <link rel="icon" type="image/png" href="https://unpkg.com/swagger-ui-dist@5.10.5/favicon-32x32.png" sizes="32x32" />
+    <link rel="icon" type="image/png" href="https://unpkg.com/swagger-ui-dist@5.10.5/favicon-16x16.png" sizes="16x16" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+
+        body {
+            margin:0;
+            background: #fafafa;
+        }
+
+        .swagger-ui .topbar {
+            background-color: #3b82f6;
+        }
+
+        .swagger-ui .topbar .download-url-wrapper .select-label {
+            color: white;
+        }
+
+        .swagger-ui .topbar .download-url-wrapper input[type=text] {
+            border: 1px solid #63b3ed;
+        }
+
+        .swagger-ui .info .title {
+            color: #1a202c;
+        }
+
+        .custom-header {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .custom-header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+
+        .custom-header p {
+            margin: 10px 0 0 0;
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .api-info {
+            background: white;
+            padding: 20px;
+            margin: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .api-info h3 {
+            color: #3b82f6;
+            margin-top: 0;
+        }
+
+        .endpoint-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px;
+        }
+
+        .endpoint-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid #3b82f6;
+        }
+
+        .endpoint-card h4 {
+            margin-top: 0;
+            color: #1a202c;
+        }
+
+        .method {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .method.get { background: #10b981; color: white; }
+        .method.post { background: #3b82f6; color: white; }
+        .method.delete { background: #ef4444; color: white; }
+
+        .code-example {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 0.9em;
+            margin-top: 10px;
+            overflow-x: auto;
+        }
+
+        #swagger-ui {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="custom-header">
+        <h1>🏦 LLM-Lite Underwriter API</h1>
+        <p>파라메트릭 보험 자동 인수심사 시스템 API 문서</p>
+    </div>
+
+    <div class="api-info">
+        <h3>📚 API 개요</h3>
+        <p>
+            이 API는 자연어 입력을 통해 파라메트릭 보험상품을 자동으로 설계하는 인수심사 시스템입니다. 
+            고객이 한국어로 보험 요구사항을 입력하면, AI 에이전트가 위험 분석, 가격 계산, 보험상품 설계를 수행합니다.
+        </p>
+        <ul>
+            <li><strong>비동기 처리:</strong> 백그라운드에서 인수심사 진행</li>
+            <li><strong>실시간 진행률:</strong> 처리 단계별 상태 확인</li>
+            <li><strong>다양한 알림:</strong> Webhook, 파일, 메시지큐 지원</li>
+            <li><strong>배치 처리:</strong> 여러 요청 일괄 처리</li>
+        </ul>
+    </div>
+
+    <div class="endpoint-grid">
+        <div class="endpoint-card">
+            <h4><span class="method post">POST</span>/underwrite</h4>
+            <p>인수심사 요청을 제출합니다. 자연어 입력을 받아 비동기로 보험상품을 설계합니다.</p>
+            <div class="code-example">
+curl -X POST "http://localhost:8000/api/v1/underwrite" \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"test_001","user_input":"태풍 보험상품 설계","callback":{"type":"webhook","webhook":{"url":"https://example.com/callback"}}}'
+            </div>
+        </div>
+
+        <div class="endpoint-card">
+            <h4><span class="method get">GET</span>/tasks/{task_id}</h4>
+            <p>작업 상태를 조회합니다. 진행률, 결과, 에러 정보를 확인할 수 있습니다.</p>
+            <div class="code-example">
+curl "http://localhost:8000/api/v1/tasks/underwriter_20250121_143052_a1b2c3d4"
+            </div>
+        </div>
+
+        <div class="endpoint-card">
+            <h4><span class="method post">POST</span>/notifications/test-webhook</h4>
+            <p>Webhook 연결을 테스트합니다. 실제 결과 전송 전에 연결 상태를 확인할 수 있습니다.</p>
+            <div class="code-example">
+curl -X POST "http://localhost:8000/api/v1/notifications/test-webhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://httpbin.org/post","headers":{"Content-Type":"application/json"}}'
+            </div>
+        </div>
+
+        <div class="endpoint-card">
+            <h4><span class="method get">GET</span>/health</h4>
+            <p>시스템 상태를 확인합니다. 서버와 의존성 시스템의 정상 동작 여부를 체크합니다.</p>
+            <div class="code-example">
+curl "http://localhost:8000/api/v1/health"
+            </div>
+        </div>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            // Begin Swagger UI call region
+            const ui = SwaggerUIBundle({
+                url: './swagger.yaml', // 상대 경로로 YAML 파일 로드
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                tryItOutEnabled: true,
+                requestInterceptor: function(request) {
+                    // 실제 API 서버 URL로 요청 변경
+                    if (request.url.startsWith('./')) {
+                        request.url = 'http://localhost:8000/api/v1' + request.url.substring(1);
+                    }
+                    return request;
+                },
+                defaultModelsExpandDepth: 2,
+                defaultModelExpandDepth: 3,
+                docExpansion: "list", // "none", "list", "full"
+                tagsSorter: "alpha",
+                operationsSorter: "alpha",
+                showRequestHeaders: true,
+                showCommonExtensions: true,
+                supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
+                validatorUrl: null, // 온라인 검증기 비활성화
+                onComplete: function() {
+                    console.log("Swagger UI loaded successfully");
+                },
+                onFailure: function(error) {
+                    console.error("Failed to load Swagger UI:", error);
+                }
+            });
+            // End Swagger UI call region
+
+            // 사용자 정의 CSS 추가
+            setTimeout(function() {
+                // Try It Out 버튼들에 한국어 설명 추가
+                const tryItOutButtons = document.querySelectorAll('.try-out__btn');
+                tryItOutButtons.forEach(function(button) {
+                    button.title = "실제 API 호출을 테스트할 수 있습니다";
+                });
+
+                // Execute 버튼들에 한국어 설명 추가
+                const executeButtons = document.querySelectorAll('.btn.execute');
+                executeButtons.forEach(function(button) {
+                    button.title = "API 요청을 실행합니다";
+                });
+
+                console.log("Custom UI enhancements applied");
+            }, 2000);
+        };
+    </script>
+
+    <footer style="text-align: center; padding: 40px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; margin-top: 40px;">
+        <p style="color: #64748b; margin: 0;">
+            📧 문의사항: <a href="mailto:support@llm-lite.com" style="color: #3b82f6;">support@llm-lite.com</a> | 
+            🔗 GitHub: <a href="https://github.com/your-org/llm-lite-underwriter" style="color: #3b82f6;">Repository</a>
+        </p>
+        <p style="color: #94a3b8; font-size: 0.9em; margin: 10px 0 0 0;">
+            © 2025 LLM-Lite Development Team. All rights reserved.
+        </p>
+    </footer>
+</body>
+</html>

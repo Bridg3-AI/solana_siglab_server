@@ -2,6 +2,7 @@
 from typing import Dict, Any, List, Optional
 from ..tools.insurance import collect_event_data, calculate_loss_ratio
 from .state import AgentState
+from .logging import get_logger, log_node_start, log_node_success, log_node_error, log_tool_execution
 
 
 async def executor_layer(state: AgentState) -> Dict[str, Any]:
@@ -14,14 +15,20 @@ async def executor_layer(state: AgentState) -> Dict[str, Any]:
     Returns:
         Updated state with execution results
     """
+    logger = get_logger("executor_layer")
+    log_node_start(logger, "executor_layer")
+    
     tool_calls = state.get("tool_calls", [])
     tool_parameters = state.get("tool_parameters", {})
     
     if not tool_calls:
+        error_msg = "실행할 도구가 없습니다."
+        log_node_error(logger, "executor_layer", error_msg)
         return {
-            "result": {"error": "실행할 도구가 없습니다."},
+            **state,
+            "result": {"error": error_msg},
             "messages": state.get("messages", []) + [
-                {"role": "assistant", "content": "실행할 도구가 없습니다."}
+                {"role": "assistant", "content": error_msg}
             ]
         }
     
@@ -32,8 +39,10 @@ async def executor_layer(state: AgentState) -> Dict[str, Any]:
     try:
         # 순차적으로 도구 실행
         for tool_name in tool_calls:
+            log_tool_execution(logger, tool_name, "started")
             result = await execute_tool(tool_name, tool_parameters, event_data)
             execution_results[tool_name] = result
+            log_tool_execution(logger, tool_name, "completed", result_size=len(str(result)))
             
             # collect_event_data 결과를 다음 도구에서 사용
             if tool_name == "collect_event_data":
@@ -42,28 +51,32 @@ async def executor_layer(state: AgentState) -> Dict[str, Any]:
         # 최종 결과 구성
         final_result = prepare_final_result(execution_results, tool_calls)
         
-        # 기존 상태 유지하면서 업데이트
-        updated_state = dict(state)
-        updated_state.update({
+        # 상태 불변성 준수: 명시적 복사 패턴 사용
+        updated_state = {
+            **state,
             "result": final_result,
             "event_data": event_data,
             "loss_ratio": execution_results.get("calculate_loss_ratio"),
             "messages": state.get("messages", []) + [
                 {"role": "assistant", "content": f"도구 실행 완료: {len(tool_calls)}개 도구 실행됨"}
             ]
-        })
+        }
         
+        log_node_success(logger, "executor_layer", tools_executed=len(tool_calls))
         return updated_state
         
     except Exception as e:
         error_msg = f"도구 실행 중 오류 발생: {str(e)}"
-        updated_state = dict(state)
-        updated_state.update({
+        log_node_error(logger, "executor_layer", error_msg, exception=str(e))
+        
+        # 상태 불변성 준수: 명시적 복사 패턴 사용
+        updated_state = {
+            **state,
             "result": {"error": error_msg},
             "messages": state.get("messages", []) + [
                 {"role": "assistant", "content": error_msg}
             ]
-        })
+        }
         return updated_state
 
 

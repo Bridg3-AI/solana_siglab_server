@@ -1,8 +1,8 @@
 """
-LLM-Lite Parametric Pricing Insurance Agent
+LLM-Lite Parametric Underwriter Agent
 
 실측 데이터 없는 이벤트들에 대해 LLM 전문지식만으로 
-파라메트릭 보험 상품을 자동 설계하는 에이전트입니다.
+파라메트릭 보험 상품을 자동 설계하고 인수심사하는 에이전트입니다.
 """
 
 import uuid
@@ -48,8 +48,8 @@ from .pricing.nodes import (
 )
 
 
-class PricingInsuranceAgent:
-    """LLM-Lite Parametric Pricing 보험 에이전트"""
+class UnderwriterAgent:
+    """LLM-Lite Parametric Underwriter 에이전트"""
     
     def __init__(self, simulation_years: int = 1000, enable_audit_trail: bool = True):
         """
@@ -63,7 +63,7 @@ class PricingInsuranceAgent:
         self.agent = self.graph.compile()
     
     def _create_graph(self) -> StateGraph:
-        """LLM-Lite Pricing을 위한 LangGraph 생성"""
+        """LLM-Lite Underwriting을 위한 LangGraph 생성"""
         
         graph = StateGraph(PricingStateDict)
         
@@ -88,7 +88,7 @@ class PricingInsuranceAgent:
     
     async def run(self, user_input: str, **kwargs) -> Dict[str, Any]:
         """
-        LLM-Lite Parametric Pricing 실행
+        LLM-Lite Parametric Underwriting 실행
         
         Args:
             user_input: 사용자의 자연어 요청
@@ -98,11 +98,11 @@ class PricingInsuranceAgent:
                 - enable_tail_scenarios: Tail 시나리오 포함 여부 (기본 True)
                 
         Returns:
-            최종 가격책정 결과
+            최종 인수심사 결과
         """
         
         # 프로세스 ID 생성
-        process_id = f"llm_pricing_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        process_id = f"llm_underwriter_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
         
         # 초기 상태 구성
         initial_state = {
@@ -168,7 +168,7 @@ class PricingInsuranceAgent:
         except Exception as e:
             return {
                 "status": "error",
-                "error": f"LLM-Lite Pricing 실행 중 오류: {str(e)}",
+                "error": f"LLM-Lite Underwriting 실행 중 오류: {str(e)}",
                 "process_id": process_id,
                 "pricing_mode": "llm_lite"
             }
@@ -383,21 +383,21 @@ graph TD
 
 
 # 편의 함수들
-async def run_llm_lite_pricing(user_input: str, **kwargs) -> Dict[str, Any]:
-    """간편한 LLM-Lite Pricing 실행 함수"""
-    agent = PricingInsuranceAgent(**kwargs)
+async def run_llm_lite_underwriting(user_input: str, **kwargs) -> Dict[str, Any]:
+    """간편한 LLM-Lite Underwriting 실행 함수"""
+    agent = UnderwriterAgent(**kwargs)
     return await agent.run(user_input)
 
 
-async def run_pricing_step_by_step(user_input: str) -> Dict[str, Any]:
+async def run_underwriting_step_by_step(user_input: str) -> Dict[str, Any]:
     """간편한 단계별 실행 함수"""
-    agent = PricingInsuranceAgent()
+    agent = UnderwriterAgent()
     return await agent.run_step_by_step(user_input)
 
 
 # 테스트 함수
-async def test_pricing_agent():
-    """PricingInsuranceAgent 기본 동작 테스트"""
+async def test_underwriter_agent():
+    """UnderwriterAgent 기본 동작 테스트"""
     
     test_cases = [
         "태풍 보험 상품을 설계해줘",
@@ -406,7 +406,7 @@ async def test_pricing_agent():
         "지진 위험 보험 상품"
     ]
     
-    agent = PricingInsuranceAgent(simulation_years=100)  # 테스트용 적은 연수
+    agent = UnderwriterAgent(simulation_years=100)  # 테스트용 적은 연수
     
     for i, test_input in enumerate(test_cases, 1):
         print(f"\n🧪 테스트 {i}: {test_input}")
@@ -431,4 +431,4 @@ async def test_pricing_agent():
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(test_pricing_agent())
+    asyncio.run(test_underwriter_agent())

@@ -1,0 +1,222 @@
+{
+  "name": "Weather Insurance Template",
+  "description": "Parametric weather insurance contract template for natural disasters",
+  "version": "1.0.0",
+  "template_type": "weather_insurance",
+  "parameters": {
+    "location": {
+      "type": "string",
+      "description": "Geographic location (city, region, or coordinates)",
+      "required": true,
+      "validation": {
+        "min_length": 2,
+        "max_length": 100
+      }
+    },
+    "weather_event": {
+      "type": "enum",
+      "description": "Type of weather event to insure against",
+      "required": true,
+      "options": [
+        "typhoon",
+        "hurricane",
+        "earthquake",
+        "flood",
+        "drought",
+        "wildfire",
+        "hail",
+        "freeze"
+      ]
+    },
+    "trigger_threshold": {
+      "type": "float",
+      "description": "Threshold value that triggers payout",
+      "required": true,
+      "validation": {
+        "min": 0,
+        "max": 1000000
+      }
+    },
+    "coverage_amount": {
+      "type": "float",
+      "description": "Coverage amount in USD",
+      "required": true,
+      "validation": {
+        "min": 100,
+        "max": 1000000
+      }
+    },
+    "premium_rate": {
+      "type": "float",
+      "description": "Premium rate as percentage of coverage",
+      "required": true,
+      "validation": {
+        "min": 0.01,
+        "max": 0.50
+      }
+    },
+    "duration_days": {
+      "type": "integer",
+      "description": "Policy duration in days",
+      "required": true,
+      "validation": {
+        "min": 1,
+        "max": 365
+      }
+    },
+    "oracle_source": {
+      "type": "enum",
+      "description": "Oracle data source",
+      "required": false,
+      "default": "pyth",
+      "options": [
+        "pyth",
+        "chainlink",
+        "switchboard"
+      ]
+    }
+  },
+  "trigger_conditions": {
+    "typhoon": {
+      "data_source": "weather_api",
+      "threshold_unit": "wind_speed_kmh",
+      "threshold_description": "Maximum wind speed in km/h",
+      "typical_range": [118, 300]
+    },
+    "hurricane": {
+      "data_source": "weather_api",
+      "threshold_unit": "wind_speed_kmh",
+      "threshold_description": "Maximum wind speed in km/h",
+      "typical_range": [118, 300]
+    },
+    "earthquake": {
+      "data_source": "seismic_api",
+      "threshold_unit": "magnitude",
+      "threshold_description": "Earthquake magnitude on Richter scale",
+      "typical_range": [5.0, 9.0]
+    },
+    "flood": {
+      "data_source": "weather_api",
+      "threshold_unit": "rainfall_mm",
+      "threshold_description": "Rainfall in mm over 24 hours",
+      "typical_range": [50, 500]
+    },
+    "drought": {
+      "data_source": "weather_api",
+      "threshold_unit": "precipitation_deficit_mm",
+      "threshold_description": "Precipitation deficit in mm over 30 days",
+      "typical_range": [100, 300]
+    },
+    "wildfire": {
+      "data_source": "weather_api",
+      "threshold_unit": "fire_weather_index",
+      "threshold_description": "Fire weather index score",
+      "typical_range": [30, 100]
+    },
+    "hail": {
+      "data_source": "weather_api",
+      "threshold_unit": "hail_size_mm",
+      "threshold_description": "Hail size in mm diameter",
+      "typical_range": [20, 100]
+    },
+    "freeze": {
+      "data_source": "weather_api",
+      "threshold_unit": "temperature_celsius",
+      "threshold_description": "Minimum temperature in Celsius",
+      "typical_range": [-20, 2]
+    }
+  },
+  "risk_factors": {
+    "location_risk": {
+      "description": "Geographic risk assessment",
+      "factors": [
+        "historical_frequency",
+        "seasonal_patterns",
+        "climate_change_trends"
+      ]
+    },
+    "temporal_risk": {
+      "description": "Time-based risk assessment",
+      "factors": [
+        "season",
+        "month",
+        "long_term_climate_patterns"
+      ]
+    },
+    "severity_risk": {
+      "description": "Event severity assessment",
+      "factors": [
+        "threshold_proximity",
+        "event_duration",
+        "secondary_effects"
+      ]
+    }
+  },
+  "pricing_model": {
+    "base_premium": {
+      "calculation": "coverage_amount * premium_rate",
+      "description": "Base premium calculation"
+    },
+    "risk_multipliers": {
+      "high_risk_location": 1.5,
+      "medium_risk_location": 1.2,
+      "low_risk_location": 1.0,
+      "peak_season": 1.3,
+      "off_season": 0.8,
+      "long_duration": 1.1,
+      "short_duration": 0.9
+    },
+    "minimum_premium": 50,
+    "maximum_premium": 50000
+  },
+  "payout_structure": {
+    "trigger_mechanism": "automatic",
+    "payout_delay_hours": 24,
+    "verification_required": true,
+    "partial_payout_supported": false,
+    "payout_currency": "USDC"
+  },
+  "data_sources": {
+    "primary": {
+      "weather_api": {
+        "provider": "OpenWeatherMap",
+        "update_frequency": "hourly",
+        "reliability": 0.95
+      },
+      "seismic_api": {
+        "provider": "USGS",
+        "update_frequency": "real-time",
+        "reliability": 0.98
+      }
+    },
+    "backup": {
+      "weather_api": {
+        "provider": "AccuWeather",
+        "update_frequency": "hourly",
+        "reliability": 0.93
+      }
+    }
+  },
+  "contract_features": {
+    "automatic_renewal": false,
+    "partial_claims": false,
+    "multi_event_coverage": false,
+    "cancellation_allowed": true,
+    "refund_on_cancellation": true,
+    "upgrade_coverage": false
+  },
+  "compliance": {
+    "regulatory_requirements": [
+      "insurance_license",
+      "data_privacy",
+      "consumer_protection"
+    ],
+    "supported_jurisdictions": [
+      "US",
+      "EU",
+      "JP",
+      "KR",
+      "AU"
+    ]
+  }
+}

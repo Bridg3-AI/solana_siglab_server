@@ -1,0 +1,25 @@
+{
+  "user_input": "게임 서버 다운타임 보험",
+  "timestamp": "20250720_094101",
+  "pricing_mode": "llm_lite",
+  "core_results": {
+    "expected_loss": 361.1926569434275,
+    "gross_premium": 4452.311989626336,
+    "risk_level": "very_high",
+    "loss_ratio": 0.08112474098513049,
+    "coefficient_of_variation": 22.353391501941235
+  },
+  "validation": {
+    "passed": false,
+    "checks": {
+      "tail_padding": true,
+      "premium_consistency": true,
+      "var_tvar_consistency": true,
+      "pml_ratio_reasonable": true,
+      "cov_reasonable": false,
+      "positive_el": true,
+      "risk_load_range": false
+    }
+  },
+  "simulation_years": 1000
+}

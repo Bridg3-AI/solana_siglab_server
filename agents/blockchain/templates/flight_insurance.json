@@ -1,0 +1,259 @@
+{
+  "name": "Flight Insurance Template",
+  "description": "Parametric flight delay and cancellation insurance contract template",
+  "version": "1.0.0",
+  "template_type": "flight_insurance",
+  "parameters": {
+    "flight_number": {
+      "type": "string",
+      "description": "Flight number (e.g., AA123, DL456)",
+      "required": true,
+      "validation": {
+        "pattern": "^[A-Z]{2}[0-9]{1,4}$",
+        "min_length": 3,
+        "max_length": 6
+      }
+    },
+    "departure_date": {
+      "type": "datetime",
+      "description": "Scheduled departure date and time",
+      "required": true,
+      "validation": {
+        "future_date": true,
+        "max_days_ahead": 365
+      }
+    },
+    "departure_airport": {
+      "type": "string",
+      "description": "Departure airport code (IATA)",
+      "required": true,
+      "validation": {
+        "pattern": "^[A-Z]{3}$",
+        "length": 3
+      }
+    },
+    "arrival_airport": {
+      "type": "string",
+      "description": "Arrival airport code (IATA)",
+      "required": true,
+      "validation": {
+        "pattern": "^[A-Z]{3}$",
+        "length": 3
+      }
+    },
+    "airline": {
+      "type": "string",
+      "description": "Airline code (IATA)",
+      "required": true,
+      "validation": {
+        "pattern": "^[A-Z]{2}$",
+        "length": 2
+      }
+    },
+    "delay_threshold_minutes": {
+      "type": "integer",
+      "description": "Delay threshold in minutes to trigger payout",
+      "required": true,
+      "validation": {
+        "min": 15,
+        "max": 1440
+      }
+    },
+    "coverage_amount": {
+      "type": "float",
+      "description": "Coverage amount in USD",
+      "required": true,
+      "validation": {
+        "min": 50,
+        "max": 10000
+      }
+    },
+    "premium_rate": {
+      "type": "float",
+      "description": "Premium rate as percentage of coverage",
+      "required": true,
+      "validation": {
+        "min": 0.01,
+        "max": 0.30
+      }
+    },
+    "coverage_type": {
+      "type": "enum",
+      "description": "Type of coverage",
+      "required": true,
+      "options": [
+        "delay_only",
+        "cancellation_only",
+        "delay_and_cancellation"
+      ]
+    },
+    "oracle_source": {
+      "type": "enum",
+      "description": "Flight data source",
+      "required": false,
+      "default": "flightaware",
+      "options": [
+        "flightaware",
+        "flightradar24",
+        "aviation_edge"
+      ]
+    }
+  },
+  "trigger_conditions": {
+    "delay_only": {
+      "data_source": "flight_api",
+      "threshold_unit": "minutes",
+      "threshold_description": "Delay in minutes from scheduled departure",
+      "typical_range": [15, 360]
+    },
+    "cancellation_only": {
+      "data_source": "flight_api",
+      "threshold_unit": "status",
+      "threshold_description": "Flight cancellation status",
+      "trigger_values": ["cancelled", "diverted"]
+    },
+    "delay_and_cancellation": {
+      "data_source": "flight_api",
+      "threshold_unit": "minutes_or_status",
+      "threshold_description": "Delay in minutes or cancellation status",
+      "trigger_conditions": [
+        "delay >= threshold_minutes",
+        "status == 'cancelled'",
+        "status == 'diverted'"
+      ]
+    }
+  },
+  "risk_factors": {
+    "airline_risk": {
+      "description": "Airline-specific risk factors",
+      "factors": [
+        "on_time_performance",
+        "cancellation_rate",
+        "historical_reliability",
+        "fleet_age",
+        "maintenance_record"
+      ]
+    },
+    "route_risk": {
+      "description": "Route-specific risk factors",
+      "factors": [
+        "weather_patterns",
+        "air_traffic_congestion",
+        "airport_delays",
+        "seasonal_variations"
+      ]
+    },
+    "temporal_risk": {
+      "description": "Time-based risk factors",
+      "factors": [
+        "time_of_day",
+        "day_of_week",
+        "season",
+        "holidays"
+      ]
+    },
+    "external_risk": {
+      "description": "External risk factors",
+      "factors": [
+        "weather_conditions",
+        "air_traffic_control",
+        "security_issues",
+        "airport_capacity"
+      ]
+    }
+  },
+  "pricing_model": {
+    "base_premium": {
+      "calculation": "coverage_amount * premium_rate",
+      "description": "Base premium calculation"
+    },
+    "risk_multipliers": {
+      "high_delay_route": 1.8,
+      "medium_delay_route": 1.3,
+      "low_delay_route": 1.0,
+      "unreliable_airline": 1.5,
+      "reliable_airline": 0.8,
+      "peak_travel_season": 1.4,
+      "off_season": 0.9,
+      "morning_departure": 0.9,
+      "evening_departure": 1.2,
+      "weekend_departure": 1.1,
+      "holiday_period": 1.3
+    },
+    "minimum_premium": 10,
+    "maximum_premium": 1000
+  },
+  "payout_structure": {
+    "trigger_mechanism": "automatic",
+    "payout_delay_hours": 4,
+    "verification_required": true,
+    "partial_payout_supported": true,
+    "payout_currency": "USDC",
+    "payout_tiers": {
+      "delay_15_60_minutes": 0.25,
+      "delay_60_120_minutes": 0.50,
+      "delay_120_240_minutes": 0.75,
+      "delay_240_plus_minutes": 1.0,
+      "cancellation": 1.0,
+      "diversion": 0.8
+    }
+  },
+  "data_sources": {
+    "primary": {
+      "flight_api": {
+        "provider": "FlightAware",
+        "update_frequency": "real-time",
+        "reliability": 0.96
+      }
+    },
+    "backup": {
+      "flight_api": {
+        "provider": "FlightRadar24",
+        "update_frequency": "real-time",
+        "reliability": 0.94
+      }
+    }
+  },
+  "contract_features": {
+    "automatic_renewal": false,
+    "partial_claims": true,
+    "multi_flight_coverage": false,
+    "cancellation_allowed": true,
+    "refund_on_cancellation": true,
+    "upgrade_coverage": false,
+    "change_flight_allowed": false
+  },
+  "coverage_exclusions": {
+    "excluded_events": [
+      "war",
+      "terrorism",
+      "civil_unrest",
+      "nuclear_events",
+      "pandemic_restrictions"
+    ],
+    "excluded_airlines": [
+      "bankrupted_airlines",
+      "unlicensed_carriers"
+    ],
+    "excluded_routes": [
+      "high_risk_destinations",
+      "sanctioned_countries"
+    ]
+  },
+  "compliance": {
+    "regulatory_requirements": [
+      "aviation_insurance_license",
+      "data_privacy",
+      "consumer_protection",
+      "aviation_authority_approval"
+    ],
+    "supported_jurisdictions": [
+      "US",
+      "EU",
+      "CA",
+      "AU",
+      "JP",
+      "KR"
+    ]
+  }
+}
