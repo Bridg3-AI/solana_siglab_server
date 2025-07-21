@@ -1,10 +1,9 @@
 """
-Health Check Router
-시스템 상태 확인 API
+Health Check Router  
+시스템 상태 확인 API (단순화 버전)
 """
 
 import time
-import asyncio
 from datetime import datetime
 from typing import Dict, Any
 
@@ -14,19 +13,13 @@ _startup_time = time.time()
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
-from ..models import HealthCheckResponse
-from ..config import get_api_settings
-
 router = APIRouter()
-settings = get_api_settings()
 
 
-@router.get("/health", response_model=HealthCheckResponse, status_code=status.HTTP_200_OK)
+@router.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
     """
-    시스템 Health Check
-    
-    서비스 상태, 의존성 상태, 시스템 정보를 반환합니다.
+    간단한 Health Check (단순화 버전)
     """
     
     current_time = datetime.utcnow()
@@ -40,24 +33,20 @@ async def health_check():
         status == "healthy" for status in dependencies_status.values()
     ) else "unhealthy"
     
-    # 시스템 정보 수집
-    system_info = await get_system_info() if settings.debug else None
-    
-    health_response = HealthCheckResponse(
-        status=overall_status,
-        timestamp=current_time,
-        version=settings.version,
-        uptime_seconds=uptime_seconds,
-        dependencies=dependencies_status,
-        system_info=system_info
-    )
+    response = {
+        "status": overall_status,
+        "timestamp": current_time.isoformat(),
+        "version": "1.0.0",
+        "uptime_seconds": uptime_seconds,
+        "dependencies": dependencies_status
+    }
     
     # 상태에 따른 HTTP 상태 코드 결정
-    status_code = status.HTTP_200_OK if overall_status == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
+    response_status = status.HTTP_200_OK if overall_status == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
     
     return JSONResponse(
-        status_code=status_code,
-        content=health_response.dict()
+        status_code=response_status,
+        content=response
     )
 
 
