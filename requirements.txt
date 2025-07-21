@@ -7,6 +7,7 @@ fastapi>=0.104.0,<0.105.0
 uvicorn[standard]>=0.24.0,<0.25.0
 gunicorn>=21.2.0  # 프로덕션용 WSGI 서버
 pydantic[email]>=2.5.0,<3.0.0
+pydantic-settings>=2.4.0
 python-multipart>=0.0.6
 
 # LangChain & LangGraph (AI 에이전트 시스템)
