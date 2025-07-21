@@ -1,0 +1,111 @@
+# Git 관련
+.git
+.gitignore
+
+# Python 관련
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 테스트 관련
+.tox/
+.coverage
+.pytest_cache/
+.nox/
+htmlcov/
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# 환경 설정
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE 관련
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 문서 관련
+*.md
+!README.md
+docs/
+*.txt
+!requirements.txt
+
+# Node.js 관련
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# 개발 도구
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# 로그 및 데이터
+*.log
+logs/
+*.sqlite
+*.db
+
+# 결과 파일
+results/
+api_results/
+api_logs/
+api_notifications/
+
+# Firebase
+firebase.json
+.firebaserc
+
+# 스크립트
+scripts/
+deploy.sh
+
+# 테스트 결과
+api_test_results.json
+
+# OS 관련
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# 기타 임시 파일
+tmp/
+temp/
+*.tmp
