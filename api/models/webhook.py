@@ -37,7 +37,7 @@ class WebhookPayload(BaseModel):
     webhook_version: str = Field(default="1.0", description="Webhook 스키마 버전")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "task_id": "underwriter_20240717_143022_abc123",
                 "request_id": "client-uuid-123",

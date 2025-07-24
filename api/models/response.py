@@ -90,7 +90,7 @@ class TaskResponse(BaseModel):
     status_url: str = Field(..., description="상태 조회 URL")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "task_id": "underwriter_20240717_143022_abc123",
                 "request_id": "client-uuid-123",
@@ -160,7 +160,7 @@ class ErrorResponse(BaseModel):
     request_id: Optional[str] = Field(default=None, description="요청 ID")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "error_code": "VALIDATION_ERROR",
                 "message": "User input contains forbidden characters",

@@ -6,7 +6,16 @@ Pydantic 모델들로 입력 요청 정의
 from pydantic import BaseModel, Field, HttpUrl, validator
 from typing import Dict, Any, Optional, Literal
 from datetime import datetime
+from enum import Enum
 import uuid
+
+
+class CallbackType(str, Enum):
+    """콜백 타입 열거형"""
+    WEBHOOK = "webhook"
+    FILE_SYSTEM = "filesystem" 
+    MESSAGE_QUEUE = "message_queue"
+    NONE = "none"
 
 
 class UnderwriteOptions(BaseModel):
@@ -35,19 +44,19 @@ class FileSystemConfig(BaseModel):
 
 class CallbackConfig(BaseModel):
     """콜백 설정"""
-    type: Literal["webhook", "filesystem", "none"] = Field(default="webhook", description="콜백 타입")
+    type: CallbackType = Field(default=CallbackType.WEBHOOK, description="콜백 타입")
     webhook: Optional[WebhookConfig] = Field(default=None, description="Webhook 설정")
     filesystem: Optional[FileSystemConfig] = Field(default=None, description="파일시스템 설정")
     
     @validator('webhook')
     def validate_webhook_required(cls, v, values):
-        if values.get('type') == 'webhook' and v is None:
+        if values.get('type') == CallbackType.WEBHOOK and v is None:
             raise ValueError('Webhook configuration is required when type is "webhook"')
         return v
     
     @validator('filesystem')
     def validate_filesystem_required(cls, v, values):
-        if values.get('type') == 'filesystem' and v is None:
+        if values.get('type') == CallbackType.FILE_SYSTEM and v is None:
             raise ValueError('Filesystem configuration is required when type is "filesystem"')
         return v
 
@@ -69,7 +78,7 @@ class UnderwriteRequest(BaseModel):
         return v.strip()
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "request_id": "client-uuid-123",
                 "user_input": "태풍 보험 상품을 설계해줘",
@@ -99,7 +108,7 @@ class BatchUnderwriteRequest(BaseModel):
     requests: list[UnderwriteRequest] = Field(..., min_items=1, max_items=10, description="배치 요청 목록")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "requests": [
                     {

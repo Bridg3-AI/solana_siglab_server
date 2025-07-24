@@ -6,6 +6,7 @@ from .request import (
     UnderwriteRequest,
     UnderwriteOptions,
     CallbackConfig,
+    CallbackType,
     WebhookConfig,
     FileSystemConfig,
     BatchUnderwriteRequest
@@ -35,6 +36,7 @@ __all__ = [
     "UnderwriteRequest",
     "UnderwriteOptions", 
     "CallbackConfig",
+    "CallbackType",
     "WebhookConfig",
     "FileSystemConfig",
     "BatchUnderwriteRequest",
